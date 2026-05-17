@@ -34,12 +34,20 @@ ollama pull qwen3:8b
 ```bash
 git clone https://github.com/AideaHandesen-dvs/OpenPaw-Code.git
 cd OpenPaw-Code
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e .
+
+# Ollama を使う場合（ローカル・無料）
+ollama pull qwen3:8b
+
+# OpenAI / DeepSeek を使う場合
 cp .env.example .env
-vim .env
-python main.py "Add a hello world function"
+vim .env  # API キーを設定
+
+# 動作確認
+openpaw list-files --repo ./myproject
+
+# バグ修正を依頼
+openpaw fix "ゼロ除算エラーを修正して" --repo ./myproject
 ```
 
 ### バグ修正
