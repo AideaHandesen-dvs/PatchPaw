@@ -19,7 +19,7 @@ The LLM receives:
 
 And returns:
 
-- Unified diff patches
+- SEARCH/REPLACE blocks
 
 The LLM never receives:
 
@@ -36,7 +36,7 @@ This design minimizes security risks while preserving most of the practical valu
 
 ## 2.1 Patch-Only Architecture
 
-The LLM is restricted to generating unified diff patches.
+The LLM is restricted to generating SEARCH/REPLACE blocks.
 
 ## 2.2 Human-in-the-Loop
 
@@ -56,7 +56,7 @@ Every action is recorded and can be replayed.
 
 ## 2.6 Auditability
 
-All changes are represented as Git-compatible diffs.
+All changes are stored as SEARCH/REPLACE patch files alongside JSONL session logs.
 
 ---
 
@@ -69,7 +69,7 @@ CLI / UI
   ↓
 Controller
   ├─ Repository Reader
-  ├─ Context Builder
+  ├─ Prompt Builder
   ├─ LLM Adapter
   ├─ Diff Validator
   ├─ Patch Applier
@@ -83,7 +83,7 @@ Controller
 
 The LLM is treated as a deterministic transformation:
 
-```text
+```
 Patch = LLM(
     user_request,
     relevant_files,
@@ -109,21 +109,21 @@ All execution is performed by trusted controller components.
 ## 5.2 Prompt Construction
 
 - Build prompts with instructions and context
-- Enforce output format requirements
+- Enforce SEARCH/REPLACE output format
 
 ## 5.3 Patch Generation
 
-- Request unified diff output only
+- Request SEARCH/REPLACE block output only
 
 ## 5.4 Patch Validation
 
-- Validate diff syntax
-- Restrict modified paths
-- Enforce file size limits
+- Validate block syntax
+- Restrict modified paths to whitelist
+- Detect dangerous patterns in REPLACE blocks
 
 ## 5.5 Patch Application
 
-- Apply patches using `git apply`
+- Apply patches via string replacement with automatic rollback on failure
 
 ## 5.6 Test Execution
 
@@ -135,29 +135,33 @@ All execution is performed by trusted controller components.
 
 ## 5.8 Session Persistence
 
-- Store prompts, diffs, logs, and metadata
+- Store prompts, patches, logs, and metadata
 
 ---
 
 # 6. Non-Functional Requirements
 
 ## Security
+
 - No direct shell access for the LLM
 - No root privileges
 - No SSH keys
-- Restricted file access
+- Restricted file access via whitelist
 - Optional network isolation
 
 ## Reliability
+
 - Rollback on failure
 - Timeout enforcement
 - Resource limits
 
 ## Portability
+
 - Linux first
 - Compatible with Docker
 
 ## Extensibility
+
 - Pluggable LLM backends
 - Configurable test runners
 
@@ -171,52 +175,53 @@ Coordinates the complete workflow.
 
 ## 7.2 Repository Reader
 
-Extracts relevant project files.
+Extracts relevant project files. Enforces whitelist (`allowed_paths`) and denylist (`denied_patterns`). Blocks path traversal.
 
-## 7.3 Context Builder
+## 7.3 Prompt Builder
 
-Constructs LLM prompts.
+Constructs LLM prompts. Enforces SEARCH/REPLACE output format via system prompt.
 
 ## 7.4 LLM Adapter
 
 Communicates with providers.
 
 Supported backends:
+
 - Ollama
-- OpenAI-compatible APIs
-- Anthropic-compatible APIs
+- OpenAI-compatible APIs (including DeepSeek)
 
 ## 7.5 Diff Validator
 
-Checks generated patches.
+Checks generated SEARCH/REPLACE blocks for format errors, dangerous patterns, and out-of-scope file paths.
 
 ## 7.6 Patch Applier
 
-Applies validated diffs.
+Applies validated patches via string replacement. Saves originals for rollback on failure.
 
 ## 7.7 Test Runner
 
-Executes tests in sandboxed environments.
+Executes tests in Docker sandboxes. Falls back to local execution when Docker is unavailable.
 
 ## 7.8 Session Manager
 
-Stores artifacts and metadata.
+Stores `.patch` and `.jsonl` artifacts per session.
 
 ---
 
 # 8. Workflow
 
-```text
-1. User submits request
-2. Repository Reader selects files
-3. Context Builder constructs prompt
-4. LLM Adapter requests patch
-5. Diff Validator checks output
-6. User reviews patch
-7. Patch Applier applies patch
-8. Test Runner executes tests
-9. If tests fail, feed results back to LLM
-10. Repeat until success or retry limit reached
+```
+1.  User submits request
+2.  Repository Reader selects files
+3.  Prompt Builder constructs prompt
+4.  LLM Adapter requests SEARCH/REPLACE blocks
+5.  Diff Validator checks output
+6.  Patch Applier performs dry-run
+7.  User reviews patch
+8.  Patch Applier applies patch
+9.  Test Runner executes tests
+10. If tests fail, feed results back to LLM
+11. Repeat until success or retry limit reached
 ```
 
 ---
@@ -246,23 +251,24 @@ The controller validates and constrains all side effects.
 
 Recommended hierarchy:
 
-```text
+```
 Host OS
- └─ Virtual Machine (optional)
-     └─ Docker Container
-         └─ OpenPaw Code
+ └─ Docker Container
+     └─ OpenPaw Code (--network=none, --user=1000:1000, --read-only)
 ```
 
 ---
 
 # 11. Directory Structure
 
-```text
-openpaw-code/
-├── openpaw_code/
+```
+openpaw/
+├── openpaw/
+│   ├── __init__.py
+│   ├── cli.py
 │   ├── controller.py
 │   ├── repository_reader.py
-│   ├── context_builder.py
+│   ├── prompt_builder.py
 │   ├── llm_adapter.py
 │   ├── diff_validator.py
 │   ├── patch_applier.py
@@ -270,13 +276,13 @@ openpaw-code/
 │   ├── session_manager.py
 │   └── config.py
 ├── tests/
-├── docs/
-│   └── DESIGN.md
-├── assets/
-│   └── logo.png
+│   └── test_openpaw.py
+├── config.yaml
 ├── pyproject.toml
 ├── README.md
-└── LICENSE
+├── DESIGN.md
+├── logo.png
+└── .env.example
 ```
 
 ---
@@ -285,29 +291,34 @@ openpaw-code/
 
 ```yaml
 llm:
-  provider: ollama
+  provider: ollama          # "ollama" or "openai"
   model: qwen3:8b
+  base_url: http://localhost:11434
+  api_key_env: OPENAI_API_KEY
+  max_tokens: 4096
+  temperature: 0.2
+
+sandbox:
+  docker_image: python:3.12-slim
+  network_disabled: true
+  timeout_seconds: 300
+  memory_limit: 512m
 
 repository:
   allowed_paths:
     - src/
     - tests/
     - README.md
+  denied_patterns:
+    - "*.env"
+    - ".env*"
+    - "**/.git/**"
+    - "*.key"
+    - "*.pem"
 
-patch:
-  max_files: 20
-  max_patch_size_kb: 512
-
-sandbox:
-  enabled: true
-  docker_image: python:3.12
-  network_disabled: true
-  timeout_seconds: 300
-  memory_limit_mb: 4096
-
-agent:
-  max_iterations: 5
-  require_user_approval: true
+session:
+  storage_dir: sessions/
+  max_history: 20
 ```
 
 ---
@@ -315,33 +326,39 @@ agent:
 # 13. CLI Design
 
 ```bash
-openpaw "Fix failing tests"
-openpaw "Add unit tests for parser.py"
-openpaw --auto "Refactor alert_handler.py"
-openpaw resume session-20260517-001
+# バグ修正
+openpaw fix "src/calculator.py の除算でゼロ除算エラーが出る。修正して" --repo ./myproject
+
+# テスト追加
+openpaw fix "src/parser.py の単体テストを tests/ に追加して" \
+  --repo ./myproject \
+  --files src/parser.py
+
+# 許可ファイル一覧の確認
+openpaw list-files --repo ./myproject
+
+# 承認をスキップ（CI用）
+openpaw fix "..." --repo ./myproject --yes
 ```
 
 ---
 
 # 14. Session Storage
 
-```text
-.sessions/
-└── 20260517-001/
-    ├── config.yaml
-    ├── prompt.txt
-    ├── response.txt
-    ├── patch.diff
-    ├── test.log
-    └── metadata.json
+```
+sessions/
+├── 20260517_120000.jsonl     # セッションログ（JSONL形式）
+├── 20260517_120000_iter1.patch  # 試行1のパッチ
+└── 20260517_120000_iter2.patch  # 試行2のパッチ
 ```
 
 ---
 
 # 15. Error Handling
 
-- Invalid diff → regenerate
-- Patch apply failure → abort
+- Invalid SEARCH/REPLACE block → regenerate
+- SEARCH not found in file → regenerate
+- Patch apply failure → rollback and abort
 - Test timeout → abort
 - Retry limit reached → stop and report
 
@@ -350,15 +367,17 @@ openpaw resume session-20260517-001
 # 16. Minimum Viable Product (MVP)
 
 Features:
+
 - CLI interface
 - Single repository support
-- Unified diff generation
+- SEARCH/REPLACE block generation
 - User approval
-- `git apply`
+- String replacement with rollback
 - Docker-based test execution
 - Iterative repair loop
 
 Estimated implementation effort:
+
 - 1 to 3 days
 
 ---
@@ -371,18 +390,20 @@ Estimated implementation effort:
 - Parallel patch exploration
 - Multi-agent planning
 - IDE integration
+- `openpaw history` command for session browsing
 
 ---
 
 # 18. Success Criteria
 
 The system can:
-1. Accept a coding request
-2. Generate a valid patch
-3. Apply the patch safely
-4. Run tests in isolation
-5. Iterate until success
-6. Preserve a complete audit trail
+
+- Accept a coding request
+- Generate valid SEARCH/REPLACE blocks
+- Apply the patch safely with rollback on failure
+- Run tests in isolation
+- Iterate until success
+- Preserve a complete audit trail
 
 ---
 
@@ -396,11 +417,11 @@ MIT License
 
 OpenPaw Code is a secure AI coding assistant based on a simple principle:
 
-> The LLM may suggest patches, but it never controls the system directly.
+> **The LLM may suggest patches, but it never controls the system directly.**
 
 This architecture combines:
+
 - Strong security
 - Full auditability
 - Local execution
 - Practical coding assistance
-
