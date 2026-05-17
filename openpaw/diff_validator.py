@@ -1,9 +1,8 @@
 """
 Diff Validator
-LLMが生成したunified diffを検査する。
-- フォーマット検証
+LLMが生成したSEARCH/REPLACEブロックを検査する。
 - 変更範囲がホワイトリスト内か確認
-- 危険なパターンの検出
+- 危険なパターンの検出（REPLACEブロック内）
 """
 
 from __future__ import annotations
@@ -11,24 +10,19 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .patch_applier import parse_blocks
 
+
+# REPLACEブロック内で検出すべき危険パターン（行番号プレフィックスなし）
 DANGEROUS_PATTERNS = [
-    # シェルコマンド埋め込み
-    r"(?m)^\+.*`[^`]+`",
-    r"(?m)^\+.*\$\((?!\()",
-    # .env アクセス
-    r"(?m)^\+.*open\s*\(['\"]\.env",
-    r"(?m)^\+.*load_dotenv",
-    # ネットワーク操作
-    r"(?m)^\+.*import\s+subprocess",
-    r"(?m)^\+.*os\.system\s*\(",
-    r"(?m)^\+.*os\.popen\s*\(",
+    r"`[^`]+`",                    # バッククォート実行
+    r"\$\((?!\()",                 # $()実行
+    r"open\s*\(['\"]\.env",        # .envアクセス
+    r"load_dotenv",                # dotenv読み込み
+    r"import\s+subprocess",        # subprocess
+    r"os\.system\s*\(",            # os.system
+    r"os\.popen\s*\(",             # os.popen
 ]
-
-HEADER_RE = re.compile(
-    r"^--- (?:a/)?(.+?)\n\+\+\+ (?:b/)?(.+?)\n", re.MULTILINE
-)
-HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@", re.MULTILINE)
 
 
 @dataclass
@@ -42,42 +36,42 @@ class DiffValidator:
     def __init__(self, allowed_paths: list[str]):
         self.allowed_paths = allowed_paths
 
-    def validate(self, diff_text: str) -> ValidationResult:
+    def validate(self, llm_output: str) -> ValidationResult:
         errors: list[str] = []
         affected: list[str] = []
 
-        if not diff_text.strip():
-            return ValidationResult(ok=False, errors=["diff が空です。"], affected_files=[])
+        if not llm_output.strip():
+            return ValidationResult(ok=False, errors=["出力が空です。"], affected_files=[])
 
-        # ---- ヘッダー解析 ----
-        headers = HEADER_RE.findall(diff_text)
-        if not headers:
-            errors.append("unified diff ヘッダー (--- / +++) が見つかりません。")
-        else:
-            for src, dst in headers:
-                path = dst.lstrip("/")
+        blocks = parse_blocks(llm_output)
+        if not blocks:
+            errors.append(
+                "SEARCH/REPLACEブロックが見つかりません。"
+                "FILE:/<<<<<<< SEARCH/=======/>>>>>>> REPLACE 形式で出力してください。"
+            )
+            return ValidationResult(ok=False, errors=errors, affected_files=[])
+
+        for block in blocks:
+            path = block.file_path
+            if path not in affected:
                 affected.append(path)
-                if not self._is_allowed(path):
-                    errors.append(f"ホワイトリスト外のファイルへの変更: {path}")
 
-        # ---- hunk ヘッダー存在確認 ----
-        if headers and not HUNK_RE.search(diff_text):
-            errors.append("@@ hunk ヘッダーが見つかりません。")
+            # スコープチェック
+            if not self._is_allowed(path):
+                errors.append(f"ホワイトリスト外のファイルへの変更: {path}")
 
-        # ---- 危険パターン検査 ----
-        for pattern in DANGEROUS_PATTERNS:
-            if re.search(pattern, diff_text):
-                errors.append(f"危険なパターンを検出: {pattern}")
+            # 危険パターン検査（REPLACEブロック内）
+            for pattern in DANGEROUS_PATTERNS:
+                if re.search(pattern, block.replace):
+                    errors.append(
+                        f"危険なパターンを検出 ({path}): {pattern}"
+                    )
 
-        # ---- 行形式の簡易チェック ----
-        for i, line in enumerate(diff_text.splitlines(), 1):
-            if line and line[0] not in ("+", "-", " ", "@", "\\", "#", "d"):
-                # diff ヘッダー行か確認
-                if not (line.startswith("---") or line.startswith("+++")):
-                    errors.append(f"不正な行 {i}: {line[:60]!r}")
-                    break
-
-        return ValidationResult(ok=len(errors) == 0, errors=errors, affected_files=affected)
+        return ValidationResult(
+            ok=len(errors) == 0,
+            errors=errors,
+            affected_files=affected,
+        )
 
     def _is_allowed(self, path: str) -> bool:
         for allowed in self.allowed_paths:

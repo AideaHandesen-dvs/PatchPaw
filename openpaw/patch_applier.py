@@ -1,70 +1,123 @@
 """
 Patch Applier
-検証済みの unified diff を git apply で適用する。
-root権限・SSH鍵なし。適用失敗時は自動ロールバック。
+SEARCH/REPLACEブロックをパースし、ファイルに直接適用する。
+
+フロー:
+  1. LLM出力からFILE/SEARCH/REPLACEブロックをパース
+  2. dry_run: 各SEARCHが対象ファイル内で一意に存在するか確認
+  3. apply: 置換を実行（失敗時は元に戻す）
 """
 
 from __future__ import annotations
 
-import subprocess
-import tempfile
+import re
+from dataclasses import dataclass
 from pathlib import Path
 
 
-class PatchError(Exception):
-    pass
+# FILE: path\n<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE
+BLOCK_RE = re.compile(
+    r"^FILE:\s*(?P<path>.+?)\s*\n"
+    r"<<<<<<< SEARCH\n"
+    r"(?P<search>.*?)"
+    r"=======\n"
+    r"(?P<replace>.*?)"
+    r">>>>>>> REPLACE",
+    re.DOTALL | re.MULTILINE,
+)
+
+
+@dataclass
+class EditBlock:
+    file_path: str
+    search: str
+    replace: str
+
+
+def parse_blocks(text: str) -> list[EditBlock]:
+    """LLM出力からEditBlockのリストを抽出する。"""
+    return [
+        EditBlock(
+            file_path=m.group("path").strip(),
+            search=m.group("search"),
+            replace=m.group("replace"),
+        )
+        for m in BLOCK_RE.finditer(text)
+    ]
 
 
 class PatchApplier:
     def __init__(self, repo_root: str | Path):
         self.root = Path(repo_root).resolve()
 
-    def dry_run(self, diff_text: str) -> tuple[bool, str]:
-        """実際には適用せず、成功するか確認する。"""
-        return self._run_git_apply(diff_text, check_only=True)
+    def dry_run(self, llm_output: str) -> tuple[bool, str]:
+        """実際には変更せず、適用できるかだけ確認する。"""
+        blocks = parse_blocks(llm_output)
+        if not blocks:
+            return False, (
+                "SEARCH/REPLACEブロックが見つかりません。\n"
+                "次の形式で出力してください:\n"
+                "FILE: path/to/file.py\n"
+                "<<<<<<< SEARCH\n"
+                "変更前のコード\n"
+                "=======\n"
+                "変更後のコード\n"
+                ">>>>>>> REPLACE"
+            )
 
-    def apply(self, diff_text: str) -> tuple[bool, str]:
-        """diff を適用する。失敗時は git apply --reverse で戻す。"""
-        ok, msg = self._run_git_apply(diff_text, check_only=False)
-        if not ok:
-            # ロールバック試行
-            self._run_git_apply(diff_text, check_only=False, reverse=True)
-        return ok, msg
+        errors = []
+        for block in blocks:
+            file_path = self.root / block.file_path
+            if not file_path.exists():
+                errors.append(f"ファイルが存在しません: {block.file_path}")
+                continue
+            content = file_path.read_text(encoding="utf-8")
+            count = content.count(block.search)
+            if count == 0:
+                preview = block.search[:80].replace("\n", "\\n")
+                errors.append(
+                    f"SEARCHブロックがファイルに見つかりません: {block.file_path}\n"
+                    f"  SEARCH先頭: {preview!r}\n"
+                    f"  → SEARCHブロックを元ファイルの内容に正確に合わせてください。"
+                )
+            elif count > 1:
+                errors.append(
+                    f"SEARCHブロックが{count}箇所に一致しました（曖昧）: {block.file_path}\n"
+                    f"  → 前後の行を含めてSEARCHブロックをより広く取ってください。"
+                )
 
-    def _run_git_apply(
-        self,
-        diff_text: str,
-        *,
-        check_only: bool,
-        reverse: bool = False,
-    ) -> tuple[bool, str]:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".patch", delete=False, encoding="utf-8"
-        ) as f:
-            f.write(diff_text)
-            patch_path = f.name
-            import shutil; shutil.copy(patch_path, '/tmp/debug.patch')
+        if errors:
+            return False, "\n".join(errors)
+        return True, ""
 
-        cmd = ["git", "apply"]
-        if check_only:
-            cmd.append("--check")
-        if reverse:
-            cmd.append("--reverse")
-        cmd.append(patch_path)
+    def apply(self, llm_output: str) -> tuple[bool, str]:
+        """SEARCHをREPLACEで置換してファイルに書き込む。失敗時は元に戻す。"""
+        blocks = parse_blocks(llm_output)
+        if not blocks:
+            return False, "SEARCH/REPLACEブロックが見つかりません。"
+
+        # ロールバック用に元の内容を保存
+        originals: dict[Path, str] = {}
+        for block in blocks:
+            p = self.root / block.file_path
+            if p not in originals and p.exists():
+                originals[p] = p.read_text(encoding="utf-8")
 
         try:
-            result = subprocess.run(
-                cmd,
-                cwd=str(self.root),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            output = (result.stdout + result.stderr).strip()
-            return result.returncode == 0, output
-        except subprocess.TimeoutExpired:
-            return False, "git apply タイムアウト"
-        except FileNotFoundError:
-            return False, "git コマンドが見つかりません"
-        finally:
-            Path(patch_path).unlink(missing_ok=True)
+            for block in blocks:
+                file_path = self.root / block.file_path
+                content = file_path.read_text(encoding="utf-8")
+                count = content.count(block.search)
+                if count != 1:
+                    raise ValueError(
+                        f"適用エラー: {block.file_path} "
+                        f"(SEARCHが{count}箇所一致)"
+                    )
+                new_content = content.replace(block.search, block.replace, 1)
+                file_path.write_text(new_content, encoding="utf-8")
+            return True, ""
+        except Exception as e:
+            # ロールバック
+            for path, original in originals.items():
+                path.write_text(original, encoding="utf-8")
+            return False, str(e)
