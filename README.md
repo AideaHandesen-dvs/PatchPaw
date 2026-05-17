@@ -29,6 +29,19 @@ ollama pull qwen3:8b
 
 ## 使い方
 
+## Quick Start
+
+```bash
+git clone https://github.com/AideaHandesen-dvs/OpenPaw-Code.git
+cd OpenPaw-Code
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+vim .env
+python main.py "Add a hello world function"
+```
+
 ### バグ修正
 
 ```bash
