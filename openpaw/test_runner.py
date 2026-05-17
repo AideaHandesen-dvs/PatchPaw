@@ -85,7 +85,7 @@ class TestRunner:
         env = {k: v for k, v in os.environ.items()}
         # .env 系を除外
         for key in list(env.keys()):
-            if "SECRET" in key or "PASSWORD" in key or "TOKEN" in key:
+            if "SECRET" in key or "PASSWORD" in key or "TOKEN" in key or "KEY" in key:
                 del env[key]
 
         try:
@@ -125,3 +125,4 @@ def _docker_running() -> bool:
         return result.returncode == 0
     except Exception:
         return False
+

@@ -94,29 +94,33 @@ class TestRepositoryReader:
 # Diff Validator
 # ────────────────────────────────────────────
 VALID_DIFF = textwrap.dedent("""\
-    --- a/src/main.py
-    +++ b/src/main.py
-    @@ -1,3 +1,3 @@
-     def foo():
-    -    return 1
-    +    return 2
-     
+    FILE: src/main.py
+    <<<<<<< SEARCH
+    def foo():
+        return 1
+    =======
+    def foo():
+        return 2
+    >>>>>>> REPLACE
 """)
 
 DANGEROUS_DIFF = textwrap.dedent("""\
-    --- a/src/main.py
-    +++ b/src/main.py
-    @@ -1,1 +1,2 @@
-     x = 1
-    +import subprocess
+    FILE: src/main.py
+    <<<<<<< SEARCH
+    x = 1
+    =======
+    x = 1
+    import subprocess
+    >>>>>>> REPLACE
 """)
 
 OUTSIDE_DIFF = textwrap.dedent("""\
-    --- a/secret.key
-    +++ b/secret.key
-    @@ -1 +1 @@
-    -old
-    +new
+    FILE: secret.key
+    <<<<<<< SEARCH
+    old
+    =======
+    new
+    >>>>>>> REPLACE
 """)
 
 
@@ -158,7 +162,7 @@ class TestPromptBuilder:
             file_contents={"src/main.py": "x = 1\n"},
         )
         assert msgs[0]["role"] == "system"
-        assert "unified diff" in msgs[0]["content"].lower()
+        assert "search/replace" in msgs[0]["content"].lower()
         assert "バグを直して" in msgs[1]["content"]
         assert "src/main.py" in msgs[1]["content"]
 
@@ -169,11 +173,11 @@ class TestPromptBuilder:
             instruction="fix",
             file_contents={"src/a.py": "pass"},
             test_result="FAILED",
-            previous_diff=VALID_DIFF,
+            previous_output=VALID_DIFF,
             iteration=2,
         )
         combined = msgs[1]["content"]
-        assert "Previous Diff" in combined
+        assert "Previous Output" in combined
         assert "FAILED" in combined
 
 
@@ -196,3 +200,4 @@ class TestSessionManager:
         p = sm.save_diff(VALID_DIFF, label="iter1")
         assert p.exists()
         assert VALID_DIFF in p.read_text()
+

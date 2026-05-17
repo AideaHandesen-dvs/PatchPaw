@@ -1,6 +1,6 @@
 # OpenPaw Code 🐾
 
-![OpenPaw Code](logo.png)
+![OpenPaw Code](assets/logo.png)
 
 > **「LLMは diff を作るだけ、実行権は Controller が持つ」**
 
@@ -9,7 +9,7 @@
 ## 特徴
 
 - 🔒 **安全第一** — SSH鍵なし・root権限なし・.env読み取り禁止
-- 🎯 **純粋関数としてのLLM** — 入力(コード+指示) → 出力(unified diff) のみ
+- 🎯 **純粋関数としてのLLM** — 入力(コード+指示) → 出力(SEARCH/REPLACE ブロック) のみ
 - 🐳 **Dockerサンドボックス** — テストはネットワーク遮断・読み取り専用
 - 👤 **人間承認** — パッチ適用前に必ずユーザーが確認
 - 🔁 **自動再試行** — テスト失敗時にLLMへフィードバックして再生成
@@ -102,10 +102,10 @@ User
   ↓
 Controller
   ├─ Repository Reader  (ホワイトリスト方式でファイル読み取り)
-  ├─ Prompt Builder     (unified diff 生成専用プロンプト)
+  ├─ Prompt Builder     (SEARCH/REPLACE ブロック生成専用プロンプト)
   ├─ LLM Adapter        (Ollama / OpenAI)
   ├─ Diff Validator     (フォーマット・危険パターン・スコープ検査)
-  ├─ Patch Applier      (git apply / ロールバック対応)
+  ├─ Patch Applier      (文字列置換 / ロールバック対応)
   ├─ Test Runner        (Docker サンドボックス)
   └─ Session Manager    (履歴・パッチファイル保存)
 ```
@@ -115,7 +115,7 @@ Controller
 | 要件 | 実装 |
 |---|---|
 | root権限禁止 | Docker `--user 1000:1000` |
-| SSH鍵非使用 | git apply のみ使用 |
+| SSH鍵非使用 | SEARCH/REPLACE による直接置換のみ使用 |
 | .env読み取り禁止 | `denied_patterns` でブロック |
 | ホワイトリスト方式 | `allowed_paths` 外はアクセス不可 |
 | ネットワーク遮断 | Docker `--network=none` |
@@ -131,3 +131,4 @@ pytest tests/ -v
 ## ライセンス
 
 MIT License
+
