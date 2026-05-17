@@ -189,6 +189,7 @@ class Controller:
 
             self.progress(f"⚠️  テスト失敗 (試行 {iteration})。再試行します...")
             previous_output = llm_output
+            files = self.reader.collect_files(file_hints)  # パッチ適用後のファイルを再読み込み
 
         return RunResult(
             success=False,
