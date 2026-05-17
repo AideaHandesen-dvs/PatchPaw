@@ -1,5 +1,7 @@
 # OpenPaw Code 🐾
 
+![OpenPaw Code](logo.png)
+
 > **「LLMは diff を作るだけ、実行権は Controller が持つ」**
 
 ローカルで動作する、安全なAIコーディングエージェント。
