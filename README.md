@@ -29,7 +29,7 @@ ollama pull qwen3:8b
 
 ## 使い方
 
-## Quick Start
+### Quick Start
 
 ```bash
 git clone https://github.com/AideaHandesen-dvs/OpenPaw-Code.git
