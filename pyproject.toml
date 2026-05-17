@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openpaw"
+version = "0.1.0"
+description = "OpenPaw Code — ローカルで動作する安全なAIコーディングエージェント"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+]
+
+[project.scripts]
+openpaw = "openpaw.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["openpaw*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,2 @@
+[console_scripts]
+openpaw = openpaw.cli:main
