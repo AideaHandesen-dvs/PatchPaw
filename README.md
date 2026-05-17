@@ -19,6 +19,8 @@
 ```bash
 git clone https://github.com/AideaHandesen-dvs/openpaw-code
 cd openpaw-code
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 ```
 
@@ -34,6 +36,8 @@ ollama pull qwen3:8b
 ```bash
 git clone https://github.com/AideaHandesen-dvs/OpenPaw-Code.git
 cd OpenPaw-Code
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -e .
 
 # Ollama を使う場合（ローカル・無料）
