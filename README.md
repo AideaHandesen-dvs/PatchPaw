@@ -1,10 +1,10 @@
-# OpenPaw Code 🐾
+# PatchPaw 🐾
 
-![OpenPaw Code](assets/logo.png)
+![PatchPaw](assets/logo.png)
 
 > **「LLMは diff を作るだけ、実行権は Controller が持つ」**
 
-ローカルで動作する、安全なAIコーディングエージェント。
+AIコーディングエージェント。Groq・DeepSeek・Gemini等のAPIに対応。ローカルLLM（Ollama）も使用可能。
 
 ## 特徴
 
@@ -17,8 +17,8 @@
 ## インストール
 
 ```bash
-git clone https://github.com/AideaHandesen-dvs/openpaw-code
-cd openpaw-code
+git clone https://github.com/AideaHandesen-dvs/patchpaw-code
+cd patchpaw-code
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -34,8 +34,8 @@ ollama pull qwen3:8b
 ### Quick Start
 
 ```bash
-git clone https://github.com/AideaHandesen-dvs/OpenPaw-Code.git
-cd OpenPaw-Code
+git clone https://github.com/AideaHandesen-dvs/PatchPaw-Code.git
+cd PatchPaw-Code
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -48,23 +48,23 @@ cp .env.example .env
 vim .env  # API キーを設定
 
 # 動作確認
-openpaw list-files --repo ./myproject
+patchpaw list-files --repo ./myproject
 
 # バグ修正を依頼
-openpaw fix "ゼロ除算エラーを修正して" --repo ./myproject
+patchpaw fix "ゼロ除算エラーを修正して" --repo ./myproject
 ```
 
 ### バグ修正
 
 ```bash
-openpaw fix "src/calculator.py の除算でゼロ除算エラーが出る。修正して" \
+patchpaw fix "src/calculator.py の除算でゼロ除算エラーが出る。修正して" \
   --repo ./myproject
 ```
 
 ### テスト作成
 
 ```bash
-openpaw fix "src/parser.py の単体テストを tests/ に追加して" \
+patchpaw fix "src/parser.py の単体テストを tests/ に追加して" \
   --repo ./myproject \
   --files src/parser.py
 ```
@@ -72,7 +72,7 @@ openpaw fix "src/parser.py の単体テストを tests/ に追加して" \
 ### 許可ファイル一覧を確認
 
 ```bash
-openpaw list-files --repo ./myproject
+patchpaw list-files --repo ./myproject
 ```
 
 ### オプション

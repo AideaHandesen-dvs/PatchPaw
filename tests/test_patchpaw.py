@@ -1,5 +1,5 @@
 """
-OpenPaw Code — ユニットテスト
+PatchPaw — ユニットテスト
 """
 
 import textwrap
@@ -14,14 +14,14 @@ import os
 # ────────────────────────────────────────────
 class TestConfig:
     def test_defaults(self):
-        from openpaw.config import Config
+        from patchpaw.config import Config
         c = Config()
         assert c.llm.provider == "ollama"
         assert c.sandbox.network_disabled is True
         assert "src/" in c.repository.allowed_paths
 
     def test_load_yaml(self, tmp_path):
-        from openpaw.config import Config
+        from patchpaw.config import Config
         cfg = tmp_path / "config.yaml"
         cfg.write_text(
             "llm:\n  provider: openai\n  model: gpt-4o\n",
@@ -32,7 +32,7 @@ class TestConfig:
         assert c.llm.model == "gpt-4o"
 
     def test_missing_file_returns_defaults(self, tmp_path):
-        from openpaw.config import Config
+        from patchpaw.config import Config
         c = Config.load(tmp_path / "nonexistent.yaml")
         assert c.llm.provider == "ollama"
 
@@ -52,8 +52,8 @@ class TestRepositoryReader:
         return tmp_path
 
     def _reader(self, repo):
-        from openpaw.config import Config, RepositoryConfig
-        from openpaw.repository_reader import RepositoryReader
+        from patchpaw.config import Config, RepositoryConfig
+        from patchpaw.repository_reader import RepositoryReader
         c = Config()
         c.repository = RepositoryConfig(
             allowed_paths=["src/", "tests/", "README.md"],
@@ -67,13 +67,13 @@ class TestRepositoryReader:
         assert "hello" in content
 
     def test_denied_env_file(self, repo):
-        from openpaw.repository_reader import SecurityError
+        from patchpaw.repository_reader import SecurityError
         r = self._reader(repo)
         with pytest.raises(SecurityError):
             r.read_file(".env")
 
     def test_path_traversal_blocked(self, repo):
-        from openpaw.repository_reader import SecurityError
+        from patchpaw.repository_reader import SecurityError
         r = self._reader(repo)
         with pytest.raises(SecurityError):
             r.read_file("../../../etc/passwd")
@@ -127,7 +127,7 @@ OUTSIDE_DIFF = textwrap.dedent("""\
 class TestDiffValidator:
     @pytest.fixture()
     def validator(self):
-        from openpaw.diff_validator import DiffValidator
+        from patchpaw.diff_validator import DiffValidator
         return DiffValidator(allowed_paths=["src/", "tests/", "README.md"])
 
     def test_valid_diff(self, validator):
@@ -155,7 +155,7 @@ class TestDiffValidator:
 # ────────────────────────────────────────────
 class TestPromptBuilder:
     def test_basic(self):
-        from openpaw.prompt_builder import PromptBuilder
+        from patchpaw.prompt_builder import PromptBuilder
         pb = PromptBuilder()
         msgs = pb.build(
             instruction="バグを直して",
@@ -167,7 +167,7 @@ class TestPromptBuilder:
         assert "src/main.py" in msgs[1]["content"]
 
     def test_retry_includes_previous_diff(self):
-        from openpaw.prompt_builder import PromptBuilder
+        from patchpaw.prompt_builder import PromptBuilder
         pb = PromptBuilder()
         msgs = pb.build(
             instruction="fix",
@@ -186,16 +186,16 @@ class TestPromptBuilder:
 # ────────────────────────────────────────────
 class TestSessionManager:
     def test_record_and_read(self, tmp_path):
-        from openpaw.config import SessionConfig
-        from openpaw.session_manager import SessionEntry, SessionManager
+        from patchpaw.config import SessionConfig
+        from patchpaw.session_manager import SessionEntry, SessionManager
         sm = SessionManager(tmp_path, SessionConfig(storage_dir="sessions/"))
         e = SessionEntry(instruction="test", diff=VALID_DIFF, test_success=True)
         sm.record(e)
         assert sm.last_entry().instruction == "test"
 
     def test_save_diff(self, tmp_path):
-        from openpaw.config import SessionConfig
-        from openpaw.session_manager import SessionManager
+        from patchpaw.config import SessionConfig
+        from patchpaw.session_manager import SessionManager
         sm = SessionManager(tmp_path, SessionConfig(storage_dir="sessions/"))
         p = sm.save_diff(VALID_DIFF, label="iter1")
         assert p.exists()

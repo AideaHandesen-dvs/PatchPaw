@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-OpenPaw Code CLI
+PatchPaw CLI
 使い方:
-  openpaw fix "バグを修正してください" --repo ./myproject
-  openpaw fix "テストを追加してください" --files src/foo.py tests/test_foo.py
-  openpaw list-files --repo ./myproject
+  patchpaw fix "バグを修正してください" --repo ./myproject
+  patchpaw fix "テストを追加してください" --files src/foo.py tests/test_foo.py
+  patchpaw list-files --repo ./myproject
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ BANNER = r"""
  ██    ██ ██      ██      ██  ██ ██ ██      ██   ██ ██ ███ ██
   ██████  ██      ███████ ██   ████ ██      ██   ██  ███ ███
 
- OpenPaw Code — LLM は diff を作るだけ。実行権は Controller が持つ。
+ PatchPaw — LLM は diff を作るだけ。実行権は Controller が持つ。
 """
 
 
@@ -84,8 +84,8 @@ def main() -> None:
     print(BANNER)
 
     parser = argparse.ArgumentParser(
-        prog="openpaw",
-        description="OpenPaw Code — 安全なAIコーディングエージェント",
+        prog="patchpaw",
+        description="PatchPaw — 安全なAIコーディングエージェント",
     )
     parser.add_argument(
         "--config", default="config.yaml", help="設定ファイルのパス (default: config.yaml)"

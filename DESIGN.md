@@ -1,4 +1,4 @@
-# OpenPaw Code Design Document
+# PatchPaw Design Document
 
 Version: 0.1.0
 Status: Draft
@@ -7,9 +7,9 @@ Status: Draft
 
 # 1. Overview
 
-OpenPaw Code is a secure local AI coding assistant inspired by OpenClaw.
+PatchPaw is a secure local AI coding assistant inspired by OpenClaw.
 
-Unlike agent systems that are granted direct control over the host environment, OpenPaw Code treats the Large Language Model (LLM) as a pure patch generator.
+Unlike agent systems that are granted direct control over the host environment, PatchPaw treats the Large Language Model (LLM) as a pure patch generator.
 
 The LLM receives:
 
@@ -254,7 +254,7 @@ Recommended hierarchy:
 ```
 Host OS
  └─ Docker Container
-     └─ OpenPaw Code (--network=none, --user=1000:1000, --read-only)
+     └─ PatchPaw (--network=none, --user=1000:1000, --read-only)
 ```
 
 ---
@@ -262,8 +262,8 @@ Host OS
 # 11. Directory Structure
 
 ```
-openpaw/
-├── openpaw/
+patchpaw/
+├── patchpaw/
 │   ├── __init__.py
 │   ├── cli.py
 │   ├── controller.py
@@ -276,7 +276,7 @@ openpaw/
 │   ├── session_manager.py
 │   └── config.py
 ├── tests/
-│   └── test_openpaw.py
+│   └── test_patchpaw.py
 ├── config.yaml
 ├── pyproject.toml
 ├── README.md
@@ -327,18 +327,18 @@ session:
 
 ```bash
 # バグ修正
-openpaw fix "src/calculator.py の除算でゼロ除算エラーが出る。修正して" --repo ./myproject
+patchpaw fix "src/calculator.py の除算でゼロ除算エラーが出る。修正して" --repo ./myproject
 
 # テスト追加
-openpaw fix "src/parser.py の単体テストを tests/ に追加して" \
+patchpaw fix "src/parser.py の単体テストを tests/ に追加して" \
   --repo ./myproject \
   --files src/parser.py
 
 # 許可ファイル一覧の確認
-openpaw list-files --repo ./myproject
+patchpaw list-files --repo ./myproject
 
 # 承認をスキップ（CI用）
-openpaw fix "..." --repo ./myproject --yes
+patchpaw fix "..." --repo ./myproject --yes
 ```
 
 ---
@@ -390,7 +390,7 @@ Estimated implementation effort:
 - Parallel patch exploration
 - Multi-agent planning
 - IDE integration
-- `openpaw history` command for session browsing
+- `patchpaw history` command for session browsing
 
 ---
 
@@ -415,7 +415,7 @@ MIT License
 
 # 20. Summary
 
-OpenPaw Code is a secure AI coding assistant based on a simple principle:
+PatchPaw is a secure AI coding assistant based on a simple principle:
 
 > **The LLM may suggest patches, but it never controls the system directly.**
 

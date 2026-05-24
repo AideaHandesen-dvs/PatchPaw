@@ -3,9 +3,9 @@ requires = ["setuptools>=70", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openpaw"
+name = "patchpaw"
 version = "0.1.0"
-description = "OpenPaw Code — ローカルで動作する安全なAIコーディングエージェント"
+description = "PatchPaw — ローカルで動作する安全なAIコーディングエージェント"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -20,11 +20,11 @@ dev = [
 ]
 
 [project.scripts]
-openpaw = "openpaw.cli:main"
+patchpaw = "patchpaw.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["openpaw*"]
+include = ["patchpaw*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
