@@ -17,11 +17,11 @@ AIコーディングエージェント。Groq・DeepSeek・Gemini等のAPIに対
 ## インストール
 
 ```bash
-git clone https://github.com/AideaHandesen-dvs/patchpaw-code
-cd patchpaw-code
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+git clone https://github.com/AideaHandesen-dvs/PatchPaw.git
+cd PatchPaw
+uv venv --python 3.12 .venv-code
+source .venv-code/bin/activate
+uv pip install -e .
 ```
 
 Ollama を使う場合:
@@ -34,18 +34,9 @@ ollama pull qwen3:8b
 ### Quick Start
 
 ```bash
-git clone https://github.com/AideaHandesen-dvs/PatchPaw-Code.git
-cd PatchPaw-Code
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-# Ollama を使う場合（ローカル・無料）
-ollama pull qwen3:8b
-
-# OpenAI / DeepSeek を使う場合
+# APIキーを設定（Ollama以外の場合）
 cp .env.example .env
-vim .env  # API キーを設定
+vim .env
 
 # 動作確認
 patchpaw list-files --repo ./myproject
@@ -109,15 +100,18 @@ repository:
     - "*.key"
 ```
 
-OpenAI を使う場合:
+OpenAI互換API（Groq・DeepSeek・Gemini等）を使う場合:
+
 ```yaml
 llm:
   provider: openai
-  model: gpt-4o
+  model: deepseek-chat
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
 ```
 
 ```bash
-export OPENAI_API_KEY=sk-...
+export DEEPSEEK_API_KEY=your_key_here
 ```
 
 ## アーキテクチャ
@@ -128,7 +122,7 @@ User
 Controller
   ├─ Repository Reader  (ホワイトリスト方式でファイル読み取り)
   ├─ Prompt Builder     (SEARCH/REPLACE ブロック生成専用プロンプト)
-  ├─ LLM Adapter        (Ollama / OpenAI)
+  ├─ LLM Adapter        (Ollama / OpenAI互換API)
   ├─ Diff Validator     (フォーマット・危険パターン・スコープ検査)
   ├─ Patch Applier      (文字列置換 / ロールバック対応)
   ├─ Test Runner        (Docker サンドボックス)
@@ -149,11 +143,10 @@ Controller
 ## テスト実行
 
 ```bash
-pip install -e ".[dev]"
+uv pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
 ## ライセンス
 
 MIT License
-
