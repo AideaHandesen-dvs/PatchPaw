@@ -117,7 +117,8 @@ def cmd_list_files(args: argparse.Namespace, config: Config) -> int:
 
 def main() -> None:
     _load_dotenv()
-    print(BANNER)
+    if not os.environ.get("PATCHPAW_QUIET"):
+        print(BANNER)
 
     parser = argparse.ArgumentParser(
         prog="patchpaw",
