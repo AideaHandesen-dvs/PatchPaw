@@ -1,6 +1,5 @@
-# PatchPaw ドッグフーディング: PatchPaw が自分自身を改造する
-# テストコマンド: python3 -m pytest tests/ -v --tb=short
+# 新規ファイル作成 + 複数ファイル変更テスト
 
-patchpaw/__init__.py の __version__ を参照して、cli.py の ArgumentParser に --version フラグを追加。patchpaw --version で "PatchPaw 0.1.0" と表示されるようにする。tests/test_patchpaw.py の既存テストを壊さないこと
+patchpaw/utils.py を新規作成する。関数 format_duration(seconds: float) -> str を実装し、60未満なら "{x:.1f}s"、60以上なら "{m}m {s:.0f}s" の形式で返す。tests/test_patchpaw.py の既存テストを壊さないこと
 
-controller.py の run メソッドで、LLM 呼び出し (self.llm.generate) の前後に時間計測を入れて、self.progress で "⏱ LLM 応答時間: {秒}s" と表示する。import time を追加すること。tests/test_patchpaw.py の既存テストを壊さないこと
+tests/test_utils.py を新規作成する。format_duration のテストを3件書く: 0.5秒、59.9秒、125.3秒のケース。patchpaw/utils.py の format_duration をインポートして使うこと。既存テストを壊さないこと
