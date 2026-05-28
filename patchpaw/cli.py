@@ -27,6 +27,42 @@ def _load_dotenv() -> None:
                 key, _, val = line.partition("=")
                 os.environ.setdefault(key.strip(), val.strip())
 
+
+def _find_config(specified: str) -> Path:
+    """設定ファイルを探す。
+
+    検索順:
+      1. --config で明示指定されたパス（デフォルト値以外の場合）
+      2. 環境変数 PATCHPAW_CONFIG
+      3. カレントディレクトリの config.yaml
+      4. ~/.patchpaw.yaml
+      5. インストール元ディレクトリの config.yaml (~/patchpaw/config.yaml 等)
+    """
+    # 明示指定（--config に "config.yaml" 以外が渡された場合）
+    if specified != "config.yaml":
+        return Path(specified)
+
+    # 環境変数
+    if env := os.environ.get("PATCHPAW_CONFIG"):
+        return Path(env)
+
+    # カレントディレクトリ
+    if (p := Path("config.yaml")).exists():
+        return p
+
+    # ホームディレクトリ (~/.patchpaw.yaml)
+    if (p := Path.home() / ".patchpaw.yaml").exists():
+        return p
+
+    # インストール元ディレクトリ (cli.py の 2 階層上)
+    # pip install -e . した場合: ~/patchpaw/patchpaw/cli.py → ~/patchpaw/config.yaml
+    if (p := Path(__file__).parent.parent / "config.yaml").exists():
+        return p
+
+    # 見つからなければデフォルト（Config がデフォルト値を使う）
+    return Path("config.yaml")
+
+
 BANNER = r"""
 ██████   █████  ████████  ██████ ██   ██ ██████   █████  ██     ██
 ██   ██ ██   ██    ██    ██      ██   ██ ██   ██ ██   ██ ██     ██
@@ -88,7 +124,7 @@ def main() -> None:
         description="PatchPaw — 安全なAIコーディングエージェント",
     )
     parser.add_argument(
-        "--config", default="config.yaml", help="設定ファイルのパス (default: config.yaml)"
+        "--config", default="config.yaml", help="設定ファイルのパス (default: 自動検索)"
     )
 
     subparsers = parser.add_subparsers(dest="command")
@@ -126,7 +162,8 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
 
-    config = Config.load(args.config)
+    config_path = _find_config(args.config)
+    config = Config.load(config_path)
 
     if args.command == "fix":
         sys.exit(cmd_fix(args, config))

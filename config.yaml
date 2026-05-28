@@ -1,10 +1,10 @@
 llm:
   provider: openai          # "ollama" or "openai"
-  model: deepseek-chat
+  model: deepseek-v4-flash
   base_url: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
-  max_tokens: 4096
-  temperature: 0.2
+  max_tokens: 8192
+  temperature: 0.0
 
 sandbox:
   docker_image: python:3.12-slim

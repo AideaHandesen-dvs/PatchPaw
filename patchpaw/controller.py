@@ -5,7 +5,7 @@ Controller
 フロー:
   1. ユーザー指示受け取り
   2. 関連ファイル収集
-  3. プロンプト生成
+  3. プロンプト生成（常時文脈があれば自動注入）
   4. LLM で SEARCH/REPLACE ブロック生成
   5. ブロック検証（スコープ・危険パターン）
   6. dry_run（SEARCHが一意に存在するか確認）
@@ -64,6 +64,13 @@ class Controller:
         self.test_runner = TestRunner(self.root, config.sandbox)
         self.session = SessionManager(self.root, config.session)
 
+        # 常時文脈の読み込み (.patchpaw/context.md)
+        context_path = self.root / ".patchpaw" / "context.md"
+        self.project_context: str | None = None
+        if context_path.exists():
+            self.project_context = context_path.read_text(encoding="utf-8")
+            self.progress(f"📋 常時文脈を読み込みました: {context_path}")
+
     def run(
         self,
         instruction: str,
@@ -93,6 +100,7 @@ class Controller:
                 test_result=test_output,
                 previous_output=previous_output,
                 iteration=iteration,
+                project_context=self.project_context,
             )
 
             try:

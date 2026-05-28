@@ -5,6 +5,7 @@ SEARCH/REPLACEブロックをパースし、ファイルに直接適用する。
 フロー:
   1. LLM出力からFILE/SEARCH/REPLACEブロックをパース
   2. dry_run: 各SEARCHが対象ファイル内で一意に存在するか確認
+             SEARCHが空の場合は新規ファイル作成として扱う
   3. apply: 置換を実行（失敗時は元に戻す）
 """
 
@@ -59,7 +60,7 @@ class PatchApplier:
                 "次の形式で出力してください:\n"
                 "FILE: path/to/file.py\n"
                 "<<<<<<< SEARCH\n"
-                "変更前のコード\n"
+                "変更前のコード (新規作成の場合は空欄)\n"
                 "=======\n"
                 "変更後のコード\n"
                 ">>>>>>> REPLACE"
@@ -68,6 +69,17 @@ class PatchApplier:
         errors = []
         for block in blocks:
             file_path = self.root / block.file_path
+
+            # SEARCHが空 = 新規ファイル作成
+            if block.search == "":
+                if file_path.exists():
+                    errors.append(
+                        f"新規作成しようとしましたが既に存在します: {block.file_path}\n"
+                        f"  → 既存ファイルを変更する場合は SEARCH に変更前コードを書いてください。"
+                    )
+                continue
+
+            # 既存ファイルへの変更
             if not file_path.exists():
                 errors.append(f"ファイルが存在しません: {block.file_path}")
                 continue
@@ -96,16 +108,25 @@ class PatchApplier:
         if not blocks:
             return False, "SEARCH/REPLACEブロックが見つかりません。"
 
-        # ロールバック用に元の内容を保存
-        originals: dict[Path, str] = {}
+        # ロールバック用に元の状態を保存
+        # str   → 既存ファイル（ロールバック時に内容を戻す）
+        # None  → 新規作成（ロールバック時にファイルを削除）
+        originals: dict[Path, str | None] = {}
         for block in blocks:
             p = self.root / block.file_path
-            if p not in originals and p.exists():
-                originals[p] = p.read_text(encoding="utf-8")
+            if p not in originals:
+                originals[p] = p.read_text(encoding="utf-8") if p.exists() else None
 
         try:
             for block in blocks:
                 file_path = self.root / block.file_path
+
+                if block.search == "":
+                    # 新規ファイル作成
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+                    file_path.write_text(block.replace, encoding="utf-8")
+                    continue
+
                 content = file_path.read_text(encoding="utf-8")
                 count = content.count(block.search)
                 if count != 1:
@@ -119,5 +140,10 @@ class PatchApplier:
         except Exception as e:
             # ロールバック
             for path, original in originals.items():
-                path.write_text(original, encoding="utf-8")
+                if original is None:
+                    # 新規作成したファイルを削除
+                    if path.exists():
+                        path.unlink()
+                else:
+                    path.write_text(original, encoding="utf-8")
             return False, str(e)

@@ -3,6 +3,12 @@ Prompt Builder
 LLMへ送るプロンプトを組み立てる。
 LLMへの出力は「SEARCH/REPLACEブロック」に制約する。
 行番号の計算はLLMに任せない。
+
+常時文脈:
+  project_context が渡されると、毎回のプロンプトに自動挿入される。
+  プロジェクトルートの .patchpaw/context.md に設計書・コーディング規約・
+  アーキテクチャ等を書いておけば、Claude Projects のナレッジベースに
+  相当する機能を簡易的に実現できる。
 """
 
 from __future__ import annotations
@@ -25,6 +31,7 @@ Rules:
 - SEARCH must be unique enough to match exactly one location in the file
   (include the surrounding function signature or context lines if needed)
 - REPLACE is the new code to substitute in place of SEARCH
+- To create a new file, use an empty SEARCH block (nothing between SEARCH and =======)
 - Multiple blocks are allowed for multiple files or multiple changes to the same file
 - Output NOTHING else — no explanations, no markdown fences, no prose
 - If no change is needed, output nothing
@@ -39,11 +46,16 @@ class PromptBuilder:
         test_result: str | None = None,
         previous_output: str | None = None,
         iteration: int = 1,
+        project_context: str | None = None,
     ) -> list[dict]:
         """
         Chat messages リストを返す。
         """
         user_parts: list[str] = []
+
+        # 常時文脈（設計書・規約等）を最初に挿入
+        if project_context:
+            user_parts.append(f"## Project Context\n{project_context}")
 
         user_parts.append(f"## User Instruction\n{instruction}")
 
