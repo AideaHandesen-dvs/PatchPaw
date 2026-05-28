@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import time
+
 from .config import Config
 from .diff_validator import DiffValidator
 from .llm_adapter import build_adapter
@@ -104,7 +106,10 @@ class Controller:
             )
 
             try:
+                t_start = time.time()
                 llm_output = self.llm.generate(messages)
+                elapsed = time.time() - t_start
+                self.progress(f"⏱ LLM 応答時間: {elapsed:.2f}s")
             except Exception as e:
                 return RunResult(
                     success=False,
