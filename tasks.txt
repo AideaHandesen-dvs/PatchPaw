@@ -1,0 +1,6 @@
+# PatchPaw ドッグフーディング: PatchPaw が自分自身を改造する
+# テストコマンド: python3 -m pytest tests/ -v --tb=short
+
+patchpaw/__init__.py の __version__ を参照して、cli.py の ArgumentParser に --version フラグを追加。patchpaw --version で "PatchPaw 0.1.0" と表示されるようにする。tests/test_patchpaw.py の既存テストを壊さないこと
+
+controller.py の run メソッドで、LLM 呼び出し (self.llm.generate) の前後に時間計測を入れて、self.progress で "⏱ LLM 応答時間: {秒}s" と表示する。import time を追加すること。tests/test_patchpaw.py の既存テストを壊さないこと

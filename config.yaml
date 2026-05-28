@@ -1,5 +1,5 @@
 llm:
-  provider: openai          # "ollama" or "openai"
+  provider: openai
   model: deepseek-v4-flash
   base_url: https://api.deepseek.com
   api_key_env: DEEPSEEK_API_KEY
@@ -14,8 +14,11 @@ sandbox:
 
 repository:
   allowed_paths:
-    - sum.sh
+    - patchpaw/
+    - tests/
+    - scripts/
     - README.md
+    - DESIGN.md
   denied_patterns:
     - "*.env"
     - ".env*"

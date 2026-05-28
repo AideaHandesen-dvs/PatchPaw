@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 import os
 
+from . import __version__
 from .config import Config
 from .controller import Controller
 from .repository_reader import RepositoryReader
@@ -126,6 +127,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--config", default="config.yaml", help="設定ファイルのパス (default: 自動検索)"
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"PatchPaw {__version__}"
     )
 
     subparsers = parser.add_subparsers(dest="command")
