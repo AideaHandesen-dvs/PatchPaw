@@ -46,6 +46,10 @@ class RunResult:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    # LLM 呼び出し時間の累積 (秒)。iteration をまたいで合算。
+    # duration_s (タスク全体の wall-clock) ではなく LLM 呼び出しだけの合計。
+    # テスト実行や承認待ちは含まない。
+    llm_elapsed_s: float = 0.0
 
 
 class Controller:
@@ -106,6 +110,8 @@ class Controller:
         prompt_tokens_total = 0
         completion_tokens_total = 0
         total_tokens_total = 0
+        # LLM 呼び出し時間の累積 (秒)。各 iteration の elapsed を足していく。
+        llm_elapsed_total = 0.0
 
         for iteration in range(1, self.max_iterations + 1):
             self.progress(f"\n🤖 LLM に変更案を生成依頼 (試行 {iteration}/{self.max_iterations})...")
@@ -124,6 +130,7 @@ class Controller:
                 gen_result = self.llm.generate(messages)
                 llm_output = gen_result.text
                 elapsed = time.time() - t_start
+                llm_elapsed_total += elapsed
                 # トークン累積 (None は 0 として扱う)
                 if gen_result.prompt_tokens is not None:
                     prompt_tokens_total += gen_result.prompt_tokens
@@ -151,6 +158,7 @@ class Controller:
                     prompt_tokens=prompt_tokens_total,
                     completion_tokens=completion_tokens_total,
                     total_tokens=total_tokens_total,
+                    llm_elapsed_s=llm_elapsed_total,
                 )
 
             if not llm_output.strip():
@@ -163,6 +171,7 @@ class Controller:
                     prompt_tokens=prompt_tokens_total,
                     completion_tokens=completion_tokens_total,
                     total_tokens=total_tokens_total,
+                    llm_elapsed_s=llm_elapsed_total,
                 )
 
             # ---- 検証 ----
@@ -200,6 +209,7 @@ class Controller:
                     prompt_tokens=prompt_tokens_total,
                     completion_tokens=completion_tokens_total,
                     total_tokens=total_tokens_total,
+                    llm_elapsed_s=llm_elapsed_total,
                 )
 
             # ---- 適用 ----
@@ -242,6 +252,7 @@ class Controller:
                     prompt_tokens=prompt_tokens_total,
                     completion_tokens=completion_tokens_total,
                     total_tokens=total_tokens_total,
+                    llm_elapsed_s=llm_elapsed_total,
                 )
 
             self.progress(f"⚠️  テスト失敗 (試行 {iteration})。再試行します...")
@@ -257,4 +268,5 @@ class Controller:
             prompt_tokens=prompt_tokens_total,
             completion_tokens=completion_tokens_total,
             total_tokens=total_tokens_total,
+            llm_elapsed_s=llm_elapsed_total,
         )

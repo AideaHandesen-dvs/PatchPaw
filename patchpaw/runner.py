@@ -66,6 +66,9 @@ class TaskResult:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    # LLM 呼び出し時間の累積 (秒)。duration_s (タスク全体の wall-clock) との
+    # 差が、テスト実行+承認待ち等の LLM 以外で使われた時間。
+    llm_elapsed_s: float = 0.0
 
 
 # ────────────────────────────────────────────
@@ -206,6 +209,7 @@ class TaskRunner:
                 prompt_tokens=getattr(result, "prompt_tokens", 0),
                 completion_tokens=getattr(result, "completion_tokens", 0),
                 total_tokens=getattr(result, "total_tokens", 0),
+                llm_elapsed_s=getattr(result, "llm_elapsed_s", 0.0),
             ))
 
             if result.success:
@@ -281,12 +285,12 @@ class TaskRunner:
           - run_id, started_at, finished_at, total_duration_s
           - 設定値 (start_from, max_iter, test_cmd, dry_run 等)
           - 集計 (tasks_file_total, executed, succeeded, failed)
+          - llm_elapsed_total_s: run 全体の LLM 呼び出し時間合計 (秒)
           - tokens_total: run 全体の LLM トークン使用量集計
-          - tasks: 各タスクの (task, success, duration_s, iterations,
-            message, tokens)
+          - tasks: 各タスクの (task, success, duration_s, llm_elapsed_s,
+            iterations, message, tokens)
 
         含めていないもの (v2.3.x 後追い):
-          - LLM 応答時間 (Controller の RunResult 拡張が必要)
           - 適用パッチのファイルパス (Controller の RunResult 拡張が必要)
         """
         storage_dir = self.repo_root / self.config.session.storage_dir
@@ -301,6 +305,8 @@ class TaskRunner:
         total_prompt = sum(r.prompt_tokens for r in self.results)
         total_completion = sum(r.completion_tokens for r in self.results)
         total_tokens = sum(r.total_tokens for r in self.results)
+        # LLM 呼び出し時間の合計 (秒)
+        llm_elapsed_total = sum(r.llm_elapsed_s for r in self.results)
 
         summary = {
             "run_id": self.run_id,
@@ -317,6 +323,7 @@ class TaskRunner:
             "succeeded": succeeded,
             "failed": failed_count,
             "total_duration_s": round(total_duration, 2),
+            "llm_elapsed_total_s": round(llm_elapsed_total, 2),
             "tokens_total": {
                 "prompt": total_prompt,
                 "completion": total_completion,
@@ -327,6 +334,7 @@ class TaskRunner:
                     "task": r.task,
                     "success": r.success,
                     "duration_s": round(r.duration_s, 2),
+                    "llm_elapsed_s": round(r.llm_elapsed_s, 2),
                     "iterations": r.iterations,
                     "message": r.message,
                     "tokens": {

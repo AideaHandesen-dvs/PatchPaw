@@ -435,6 +435,52 @@ class TestSummaryJson:
             "prompt": 15, "completion": 27, "total": 42,
         }
 
+    # ─── LLM 呼び出し時間 (v2.3.x) ───
+
+    def test_summary_llm_elapsed_default_zero_when_stub_omits(
+        self, tmp_path, monkeypatch
+    ):
+        """llm_elapsed_s を持たないスタブでも summary は壊れず 0.0 で出る。"""
+        monkeypatch.setattr("patchpaw.runner.Controller", _StubController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["task A"])
+
+        s = self._read_summary(tmp_path)
+        assert s["llm_elapsed_total_s"] == 0.0
+        assert s["tasks"][0]["llm_elapsed_s"] == 0.0
+
+    def test_summary_aggregates_llm_elapsed(self, tmp_path, monkeypatch):
+        """RunResult が llm_elapsed_s を返せば per-task と total に集計される。"""
+        from patchpaw.controller import RunResult
+
+        class _ElapsedController:
+            def __init__(self, repo_root, config, *, max_iterations, approval_callback):
+                pass
+            def run(self, instruction, file_hints, test_command,
+                    previous_task_changes=None):
+                if instruction == "task A":
+                    return RunResult(
+                        success=True, iterations=1,
+                        final_output="", final_test_output="", message="完了",
+                        llm_elapsed_s=1.23,
+                    )
+                return RunResult(
+                    success=True, iterations=3,
+                    final_output="", final_test_output="", message="完了",
+                    llm_elapsed_s=4.56,
+                )
+
+        monkeypatch.setattr("patchpaw.runner.Controller", _ElapsedController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["task A", "task B"])
+
+        s = self._read_summary(tmp_path)
+        # round(_, 2) されてるので == 比較で OK
+        assert s["tasks"][0]["llm_elapsed_s"] == 1.23
+        assert s["tasks"][1]["llm_elapsed_s"] == 4.56
+        # 合計も round(_, 2) されてるが、1.23 + 4.56 = 5.79 ちょうど
+        assert s["llm_elapsed_total_s"] == 5.79
+
 
 # ────────────────────────────────────────────
 # TaskRunner carry_context (v2.2)
