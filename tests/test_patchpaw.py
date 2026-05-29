@@ -236,3 +236,116 @@ class TestSessionManager:
         p = sm.save_diff(VALID_DIFF, label="iter1")
         assert p.exists()
         assert VALID_DIFF in p.read_text()
+
+
+# ────────────────────────────────────────────
+# LLM Adapter — token usage extraction (v2.3.x)
+# ────────────────────────────────────────────
+
+class _FakeResp:
+    """urllib.request.urlopen の戻り値を模す最小 context manager。"""
+    def __init__(self, body: bytes):
+        self._body = body
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        return False
+    def read(self):
+        return self._body
+
+
+class TestLLMAdapterUsage:
+    """OpenAI/Ollama アダプタが usage を GenerateResult に詰めることを検証。"""
+
+    def test_openai_extracts_usage(self, monkeypatch):
+        import json
+        from patchpaw.config import LLMConfig
+        from patchpaw.llm_adapter import OpenAIAdapter, GenerateResult
+
+        body = json.dumps({
+            "choices": [{"message": {"content": "hello"}}],
+            "usage": {
+                "prompt_tokens": 12,
+                "completion_tokens": 34,
+                "total_tokens": 46,
+            },
+        }).encode()
+        monkeypatch.setattr(
+            "patchpaw.llm_adapter.urllib.request.urlopen",
+            lambda req, timeout=600: _FakeResp(body),
+        )
+        cfg = LLMConfig(provider="openai", model="x", api_key="dummy")
+        adapter = OpenAIAdapter(cfg)
+        r = adapter.generate([{"role": "user", "content": "hi"}])
+        assert isinstance(r, GenerateResult)
+        assert r.text == "hello"
+        assert r.prompt_tokens == 12
+        assert r.completion_tokens == 34
+        assert r.total_tokens == 46
+
+    def test_openai_missing_usage_returns_none(self, monkeypatch):
+        """usage フィールドが欠けてる互換実装でも壊れず None で返ること。"""
+        import json
+        from patchpaw.config import LLMConfig
+        from patchpaw.llm_adapter import OpenAIAdapter
+
+        body = json.dumps({
+            "choices": [{"message": {"content": "ok"}}],
+        }).encode()
+        monkeypatch.setattr(
+            "patchpaw.llm_adapter.urllib.request.urlopen",
+            lambda req, timeout=600: _FakeResp(body),
+        )
+        cfg = LLMConfig(provider="openai", model="x", api_key="dummy")
+        adapter = OpenAIAdapter(cfg)
+        r = adapter.generate([{"role": "user", "content": "hi"}])
+        assert r.text == "ok"
+        assert r.prompt_tokens is None
+        assert r.completion_tokens is None
+        assert r.total_tokens is None
+
+    def test_ollama_extracts_counts(self, monkeypatch):
+        import json
+        from patchpaw.config import LLMConfig
+        from patchpaw.llm_adapter import OllamaAdapter
+
+        body = json.dumps({
+            "message": {"content": "hello"},
+            "prompt_eval_count": 10,
+            "eval_count": 5,
+        }).encode()
+        monkeypatch.setattr(
+            "patchpaw.llm_adapter.urllib.request.urlopen",
+            lambda req, timeout=600: _FakeResp(body),
+        )
+        cfg = LLMConfig(provider="ollama", model="x")
+        adapter = OllamaAdapter(cfg)
+        r = adapter.generate([{"role": "user", "content": "hi"}])
+        assert r.text == "hello"
+        assert r.prompt_tokens == 10
+        assert r.completion_tokens == 5
+        # total は prompt + completion の合算
+        assert r.total_tokens == 15
+
+    def test_ollama_partial_counts_total_none(self, monkeypatch):
+        """prompt_eval_count がキャッシュヒットで欠けた場合、total も None。"""
+        import json
+        from patchpaw.config import LLMConfig
+        from patchpaw.llm_adapter import OllamaAdapter
+
+        body = json.dumps({
+            "message": {"content": "ok"},
+            "eval_count": 5,
+            # prompt_eval_count なし
+        }).encode()
+        monkeypatch.setattr(
+            "patchpaw.llm_adapter.urllib.request.urlopen",
+            lambda req, timeout=600: _FakeResp(body),
+        )
+        cfg = LLMConfig(provider="ollama", model="x")
+        adapter = OllamaAdapter(cfg)
+        r = adapter.generate([{"role": "user", "content": "hi"}])
+        assert r.text == "ok"
+        assert r.prompt_tokens is None
+        assert r.completion_tokens == 5
+        assert r.total_tokens is None

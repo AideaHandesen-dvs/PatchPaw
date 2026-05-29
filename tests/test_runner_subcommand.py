@@ -381,6 +381,60 @@ class TestSummaryJson:
         # 形式: run_YYYYMMDD_HHMMSS
         assert len(runner.run_id) == len("run_YYYYMMDD_HHMMSS")
 
+    # ─── トークン使用量 (v2.3.x) ───
+
+    def test_summary_tokens_default_zero_when_stub_omits_them(
+        self, tmp_path, monkeypatch
+    ):
+        """tokens フィールドを持たないスタブでも summary は壊れず 0 で出る。"""
+        monkeypatch.setattr("patchpaw.runner.Controller", _StubController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["task A"])
+
+        s = self._read_summary(tmp_path)
+        assert s["tokens_total"] == {"prompt": 0, "completion": 0, "total": 0}
+        assert s["tasks"][0]["tokens"] == {
+            "prompt": 0, "completion": 0, "total": 0,
+        }
+
+    def test_summary_aggregates_tokens(self, tmp_path, monkeypatch):
+        """RunResult が tokens を返せば、per-task と tokens_total に集計される。"""
+        from patchpaw.controller import RunResult
+
+        class _TokenController:
+            def __init__(self, repo_root, config, *, max_iterations, approval_callback):
+                pass
+            def run(self, instruction, file_hints, test_command,
+                    previous_task_changes=None):
+                # タスクごとに異なるトークン数を返して集計を検証可能にする
+                if instruction == "task A":
+                    return RunResult(
+                        success=True, iterations=1,
+                        final_output="", final_test_output="", message="完了",
+                        prompt_tokens=10, completion_tokens=20, total_tokens=30,
+                    )
+                return RunResult(
+                    success=True, iterations=2,
+                    final_output="", final_test_output="", message="完了",
+                    prompt_tokens=5, completion_tokens=7, total_tokens=12,
+                )
+
+        monkeypatch.setattr("patchpaw.runner.Controller", _TokenController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["task A", "task B"])
+
+        s = self._read_summary(tmp_path)
+        assert s["tasks"][0]["tokens"] == {
+            "prompt": 10, "completion": 20, "total": 30,
+        }
+        assert s["tasks"][1]["tokens"] == {
+            "prompt": 5, "completion": 7, "total": 12,
+        }
+        # 全タスク合算
+        assert s["tokens_total"] == {
+            "prompt": 15, "completion": 27, "total": 42,
+        }
+
 
 # ────────────────────────────────────────────
 # TaskRunner carry_context (v2.2)

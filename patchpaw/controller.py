@@ -41,6 +41,11 @@ class RunResult:
     final_test_output: str
     message: str
     affected_files: list[str] = field(default_factory=list)
+    # LLM トークン使用量 (この run 全体での累積)。
+    # プロバイダが usage を返さない場合は 0 のまま。
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 class Controller:
@@ -96,6 +101,12 @@ class Controller:
         previous_output: str | None = None
         test_output: str | None = None
 
+        # LLM トークン使用量の累積 (iteration をまたいで合計)。
+        # プロバイダが usage を返さない場合は 0 のまま増えない。
+        prompt_tokens_total = 0
+        completion_tokens_total = 0
+        total_tokens_total = 0
+
         for iteration in range(1, self.max_iterations + 1):
             self.progress(f"\n🤖 LLM に変更案を生成依頼 (試行 {iteration}/{self.max_iterations})...")
             messages = self.prompt_builder.build(
@@ -110,9 +121,26 @@ class Controller:
 
             try:
                 t_start = time.time()
-                llm_output = self.llm.generate(messages)
+                gen_result = self.llm.generate(messages)
+                llm_output = gen_result.text
                 elapsed = time.time() - t_start
-                self.progress(f"⏱ LLM 応答時間: {elapsed:.2f}s")
+                # トークン累積 (None は 0 として扱う)
+                if gen_result.prompt_tokens is not None:
+                    prompt_tokens_total += gen_result.prompt_tokens
+                if gen_result.completion_tokens is not None:
+                    completion_tokens_total += gen_result.completion_tokens
+                if gen_result.total_tokens is not None:
+                    total_tokens_total += gen_result.total_tokens
+                # 応答時間ログにトークン情報も併記 (取れた場合のみ)
+                if gen_result.total_tokens is not None:
+                    self.progress(
+                        f"⏱ LLM 応答時間: {elapsed:.2f}s  "
+                        f"tokens: prompt={gen_result.prompt_tokens} "
+                        f"completion={gen_result.completion_tokens} "
+                        f"total={gen_result.total_tokens}"
+                    )
+                else:
+                    self.progress(f"⏱ LLM 応答時間: {elapsed:.2f}s")
             except Exception as e:
                 return RunResult(
                     success=False,
@@ -120,6 +148,9 @@ class Controller:
                     final_output="",
                     final_test_output=test_output or "",
                     message=f"LLM エラー: {e}",
+                    prompt_tokens=prompt_tokens_total,
+                    completion_tokens=completion_tokens_total,
+                    total_tokens=total_tokens_total,
                 )
 
             if not llm_output.strip():
@@ -129,6 +160,9 @@ class Controller:
                     final_output="",
                     final_test_output="",
                     message="LLM: 変更不要と判断しました。",
+                    prompt_tokens=prompt_tokens_total,
+                    completion_tokens=completion_tokens_total,
+                    total_tokens=total_tokens_total,
                 )
 
             # ---- 検証 ----
@@ -163,6 +197,9 @@ class Controller:
                     final_output=llm_output,
                     final_test_output="",
                     message="ユーザーが変更を拒否しました。",
+                    prompt_tokens=prompt_tokens_total,
+                    completion_tokens=completion_tokens_total,
+                    total_tokens=total_tokens_total,
                 )
 
             # ---- 適用 ----
@@ -202,6 +239,9 @@ class Controller:
                     final_test_output=result.output,
                     message="完了",
                     affected_files=validation.affected_files,
+                    prompt_tokens=prompt_tokens_total,
+                    completion_tokens=completion_tokens_total,
+                    total_tokens=total_tokens_total,
                 )
 
             self.progress(f"⚠️  テスト失敗 (試行 {iteration})。再試行します...")
@@ -214,4 +254,7 @@ class Controller:
             final_output=previous_output or "",
             final_test_output=test_output or "",
             message=f"{self.max_iterations} 回試行しましたが成功しませんでした。",
+            prompt_tokens=prompt_tokens_total,
+            completion_tokens=completion_tokens_total,
+            total_tokens=total_tokens_total,
         )

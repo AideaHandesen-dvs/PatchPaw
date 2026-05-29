@@ -61,6 +61,11 @@ class TaskResult:
     duration_s: float
     iterations: int
     message: str
+    # LLM トークン使用量 (タスク内の累積)。
+    # プロバイダが usage を返さない場合は 0。
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 # ────────────────────────────────────────────
@@ -198,6 +203,9 @@ class TaskRunner:
                 duration_s=dur,
                 iterations=result.iterations,
                 message=result.message,
+                prompt_tokens=getattr(result, "prompt_tokens", 0),
+                completion_tokens=getattr(result, "completion_tokens", 0),
+                total_tokens=getattr(result, "total_tokens", 0),
             ))
 
             if result.success:
@@ -269,14 +277,15 @@ class TaskRunner:
 
         保存先: <repo_root>/<session.storage_dir>/<run_id>_summary.json
 
-        含めるもの (v2.3 MVP):
+        含めるもの:
           - run_id, started_at, finished_at, total_duration_s
           - 設定値 (start_from, max_iter, test_cmd, dry_run 等)
           - 集計 (tasks_file_total, executed, succeeded, failed)
-          - tasks: 各タスクの (task, success, duration_s, iterations, message)
+          - tokens_total: run 全体の LLM トークン使用量集計
+          - tasks: 各タスクの (task, success, duration_s, iterations,
+            message, tokens)
 
-        含めていないもの (v2.3.x で後追い):
-          - トークン推定 (llm_adapter 改修が必要)
+        含めていないもの (v2.3.x 後追い):
           - LLM 応答時間 (Controller の RunResult 拡張が必要)
           - 適用パッチのファイルパス (Controller の RunResult 拡張が必要)
         """
@@ -287,6 +296,11 @@ class TaskRunner:
         succeeded = sum(1 for r in self.results if r.success)
         failed_count = sum(1 for r in self.results if not r.success)
         total_duration = sum(r.duration_s for r in self.results)
+
+        # トークン合計 (プロバイダが usage を返さない場合は 0 のまま)
+        total_prompt = sum(r.prompt_tokens for r in self.results)
+        total_completion = sum(r.completion_tokens for r in self.results)
+        total_tokens = sum(r.total_tokens for r in self.results)
 
         summary = {
             "run_id": self.run_id,
@@ -303,6 +317,11 @@ class TaskRunner:
             "succeeded": succeeded,
             "failed": failed_count,
             "total_duration_s": round(total_duration, 2),
+            "tokens_total": {
+                "prompt": total_prompt,
+                "completion": total_completion,
+                "total": total_tokens,
+            },
             "tasks": [
                 {
                     "task": r.task,
@@ -310,6 +329,11 @@ class TaskRunner:
                     "duration_s": round(r.duration_s, 2),
                     "iterations": r.iterations,
                     "message": r.message,
+                    "tokens": {
+                        "prompt": r.prompt_tokens,
+                        "completion": r.completion_tokens,
+                        "total": r.total_tokens,
+                    },
                 }
                 for r in self.results
             ],

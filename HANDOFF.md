@@ -211,9 +211,10 @@ git tag pre-dogfood-$(date +%Y%m%d-%H%M%S)
 
 優先度順:
 
-1. **v2.3.x 追加候補**: サマリ JSON に LLM トークン使用量・応答時間・
-   適用パッチパスを追加。それぞれコアコード変更 (Controller / llm_adapter /
-   SessionManager) を伴うので、段階的に。詳細は TODO.md。
+1. **v2.3.x 残り**: サマリ JSON への追加。LLM トークン使用量は完了
+   (2026-05-29)。残るは LLM 応答時間と適用パッチパス。それぞれコアコード
+   変更 (Controller / llm_adapter / SessionManager) を伴うので、段階的に。
+   詳細は TODO.md。
 2. **P2 sed 風ブロック**: 同一ファイル内大量箇所変更で SEARCH/REPLACE が
    破綻する問題への対処。設計は TODO.md。
 3. **P3 repo-map**: `--files` 未指定時の関連ファイル自動選択。
