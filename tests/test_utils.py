@@ -18,3 +18,8 @@ def test_format_duration_59_9s() -> None:
 def test_format_duration_125_3s() -> None:
     """125.3秒 → "2m 5s" になる（60秒以上）"""
     assert format_duration(125.3) == "2m 5s"
+
+
+def test_format_duration_zero() -> None:
+    """0.0秒 → "0.0s" になる（最小境界値）"""
+    assert format_duration(0.0) == "0.0s"
