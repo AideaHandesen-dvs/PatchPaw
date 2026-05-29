@@ -169,17 +169,28 @@ cat .patchpaw/test-cmd
 
 ## 5. 進行中のタスクと次セッションへの引き継ぎ
 
-### 5.1 P1: `patchpaw run` サブコマンド
+### 5.1 P1: `patchpaw run` サブコマンド — **完了 (2026-05-29)**
 
 - [x] **v1** 移植 (bash 版 `patchpaw-run.sh` の Python 化)
 - [x] **v2.1** `--continue-from-task N` (タスク途中再開)
 - [x] **v2.3** セッションサマリ JSON 出力 (MVP)
-- [ ] **v2.2** 直前タスクの変更ファイル引き継ぎ ← **次に着手するならここ**
+- [x] **v2.2** 直前タスクの変更ファイル引き継ぎ (`--no-carry-context` で opt-out)
 
-### 5.2 v2.2 設計 (合意済み、未実装)
+### 5.2 次に着手するターゲット
+
+優先度順:
+
+1. **v2.3.x 追加候補**: サマリ JSON に LLM トークン使用量・応答時間・
+   適用パッチパスを追加。それぞれコアコード変更 (Controller / llm_adapter /
+   SessionManager) を伴うので、段階的に。詳細は TODO.md。
+2. **P2 sed 風ブロック**: 同一ファイル内大量箇所変更で SEARCH/REPLACE が
+   破綻する問題への対処。設計は TODO.md。
+3. **P3 repo-map**: `--files` 未指定時の関連ファイル自動選択。
+
+### 5.3 v2.2 設計 (実装済み、参考記録)
 
 論点 1 (取得方法): **A** — `Controller.RunResult` に `affected_files: list[str]`
-追加。Controller 側で `parse_blocks` を呼んで埋める。
+追加。Controller 側で `validation.affected_files` を埋める。
 
 論点 2 (伝達方法): **D** — `PromptBuilder.build()` に
 `previous_task_changes: list[str] | None = None` 引数追加。
@@ -191,34 +202,6 @@ LLM への明示テキストとして渡す ("## Previous Task's Changes" セク
 
 論点 4 (ON/OFF): **K** — デフォルト ON、`--no-carry-context` で opt-out。
 環境変数 `CARRY_CONTEXT=0` でも OFF にできる。
-
-実装範囲:
-- `patchpaw/controller.py`: RunResult 拡張、Controller.run 引数追加
-- `patchpaw/prompt_builder.py`: build() 引数追加 + section 追加
-- `patchpaw/runner.py`: タスク間で affected_files を保持、次タスクに渡す
-- `patchpaw/cli.py`: `--no-carry-context` フラグ追加
-- `tests/`: PromptBuilder, Controller, TaskRunner にケース追加
-
-### 5.3 v2.3.x (v2.2 完了後の追加候補)
-
-`sessions/run_*_summary.json` に追加するフィールド。
-それぞれコアコード変更を伴うので段階的に。
-
-- LLM トークン使用量 (`llm_adapter.py` の `OpenAIAdapter` が response の
-  `usage` を読み取って返す API 拡張が必要)
-- LLM 応答時間 (`Controller.RunResult` に `llm_elapsed_s` 追加)
-- 適用 patch ファイルパス (`Controller.RunResult` に `patch_files: list[str]` 追加。
-  SessionManager の session_id を Controller 経由で TaskRunner に渡す)
-
-### 5.4 P2: sed 風ブロック (`DELETE_PATTERN` / `REPLACE_PATTERN`)
-
-TODO.md 参照。同一ファイル内の大量箇所変更で SEARCH/REPLACE が破綻する
-問題への対処。設計は v2 完了後に再度詰める。
-
-### 5.5 P3: repo-map (ファイル自動選択)
-
-TODO.md 参照。`--files` 未指定時の関連ファイル自動選択。
-P2 完了後、簡易キーワードマッチから着手予定。
 
 ---
 

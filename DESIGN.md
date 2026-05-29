@@ -274,13 +274,19 @@ patchpaw/
 │   ├── patch_applier.py
 │   ├── test_runner.py
 │   ├── session_manager.py
+│   ├── runner.py            # P1: タスクファイルを順次実行する TaskRunner
 │   └── config.py
 ├── tests/
-│   └── test_patchpaw.py
+│   ├── test_patchpaw.py
+│   ├── test_runner_subcommand.py
+│   └── test_utils.py
 ├── config.yaml
+├── config-selftest.yaml     # ドッグフーディング時の allowed_paths 絞り込み用
 ├── pyproject.toml
 ├── README.md
 ├── DESIGN.md
+├── HANDOFF.md               # セッション間引き継ぎ運用ガイド
+├── TODO.md
 ├── logo.png
 └── .env.example
 ```
@@ -339,7 +345,45 @@ patchpaw list-files --repo ./myproject
 
 # 承認をスキップ（CI用）
 patchpaw fix "..." --repo ./myproject --yes
+
+# タスクファイルから複数タスクを順次実行 (P1 v1〜v2.2)
+patchpaw run tasks.txt --repo ./myproject
+
+# 途中から再開 (P1 v2.1)
+patchpaw run tasks.txt --repo ./myproject --continue-from-task 3
+
+# タスク間の文脈引き継ぎを無効化 (P1 v2.2)
+patchpaw run tasks.txt --repo ./myproject --no-carry-context
 ```
+
+## 13.1 `patchpaw run` の挙動
+
+タスクファイル (1 行 1 タスク、`#` でコメント、空行は無視) を読み、各
+タスクごとに `Controller` を新規生成して順次実行する。タスクごとに
+`session_id` が分離される (bash 版 `patchpaw-run.sh` と同じ挙動)。
+
+主な機能:
+- `--max-iter` (env: `MAX_ITER`) LLM 最大試行回数
+- `--stop-on-fail` / `--no-stop-on-fail` (env: `STOP_ON_FAIL`)
+- `--commit-per-task` / `--no-commit-per-task` (env: `COMMIT_PER_TASK`)
+- `--continue-from-task N` (env: `CONTINUE_FROM_TASK`) 1-indexed で再開
+- `--carry-context` / `--no-carry-context` (env: `CARRY_CONTEXT`)
+  直前タスクで変更されたファイル一覧を次タスクのプロンプトに自動注入
+- `--dry-run` (env: `DRY_RUN`)
+- `--test-cmd` (env: `PATCHPAW_TEST_CMD`、未指定時は `.patchpaw/test-cmd`
+  → デフォルトの順で解決)
+
+CLI フラグ未指定時はすべて対応する環境変数を見て、それも未指定なら
+デフォルト値を使う。
+
+実行終了時に `sessions/<run_id>_summary.json` が書かれる (P1 v2.3)。
+含まれるフィールド:
+- `run_id`, `started_at`, `finished_at`, `total_duration_s`
+- 設定値: `test_cmd`, `max_iter`, `stop_on_fail`, `commit_per_task`,
+  `start_from`
+- 集計: `tasks_file_total`, `executed`, `succeeded`, `failed`
+- `tasks[]`: 各タスクの `task`, `success`, `duration_s`,
+  `iterations`, `message`
 
 ---
 
@@ -413,49 +457,7 @@ MIT License
 
 ---
 
-# 20. Project Knowledge Layout (for Claude Projects)
-
-PatchPaw 自身を Claude Projects で開発する場合、リポジトリ全体を zip にまとめて
-Project knowledge にアップロードしてはならない。`git ls-files` で出る個別ファイルを
-そのままアップロードする。
-
-## Rationale
-
-- Claude.ai のブラウザ UI でユーザーが各ファイルの中身を直接確認できる。
-  zip では中身が見えるのは Claude (サンドボックス内で展開できる) だけで、
-  ユーザーには見えない。これは「Project knowledge に何が入っているか」を
-  ユーザーが自分の目で監査できないことを意味し、共有状態の信頼性を損なう。
-- `git ls-files` は `.gitignore` を尊重するので、`sessions/`, `.env`, ビルド
-  成果物などが自動的に除外される。
-- 数ファイルだけ変えたとき、zip を作り直す必要がなく、変更ファイルだけ
-  差し替えればよい。
-
-## Upload procedure
-
-```bash
-cd ~/patchpaw
-git ls-files
-# 出てきたファイルをファイルマネージャで全選択し、
-# Claude Projects の Project knowledge パネルにドラッグ&ドロップ
-```
-
-ディレクトリ構造を保ったまま別マシンに転送してから上げる場合:
-
-```bash
-rsync -R $(git ls-files) <remote>:<target>/
-```
-
-## Refresh routine
-
-- **変更ごと**: 変更ファイルだけ Project knowledge で差し替える
-- **フルリセット**: Project knowledge を全削除し、`git ls-files` の出力を再アップロード
-- **セッション終了時**: コードを変更したなら、対応するファイルを Project knowledge にも
-  反映してから閉じる。これを怠るとリポジトリの実態と Project knowledge が乖離し、
-  次セッションの Claude が古い情報で動く
-
----
-
-# 21. Summary
+# 20. Summary
 
 PatchPaw is a secure AI coding assistant based on a simple principle:
 
