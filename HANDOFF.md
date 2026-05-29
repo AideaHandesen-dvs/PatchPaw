@@ -211,13 +211,15 @@ git tag pre-dogfood-$(date +%Y%m%d-%H%M%S)
 
 優先度順:
 
-1. **v2.3.x 残り**: サマリ JSON への追加。LLM トークン使用量と応答時間は
-   完了 (2026-05-29)。残るは適用パッチパス
-   (`Controller.RunResult.patch_files`)。iteration ごとの patch を全部
-   追跡するか最終 iter だけにするかは設計判断。詳細は TODO.md。
-2. **P2 sed 風ブロック**: 同一ファイル内大量箇所変更で SEARCH/REPLACE が
-   破綻する問題への対処。設計は TODO.md。
-3. **P3 repo-map**: `--files` 未指定時の関連ファイル自動選択。
+1. **P2 sed 風ブロック**: 同一ファイル内大量箇所変更で SEARCH/REPLACE が
+   破綻する問題への対処。設計は TODO.md に下書きあり、実装着手前に
+   チャットで設計議論 (正規表現 vs リテラル、ロールバック方式、
+   `DANGEROUS_PATTERNS` を REPLACE_PATTERN replacement にも掛けるか等)。
+2. **P3 repo-map**: `--files` 未指定時の関連ファイル自動選択。
+   P2 の後。設計案を出す段階でチャット相談。
+
+v2.3.x (サマリ JSON 拡張) は 2026-05-29 に全完了:
+LLM トークン使用量・LLM 応答時間・適用 patch ファイルパス。
 
 ### 5.3 v2.2 設計 (実装済み、参考記録)
 

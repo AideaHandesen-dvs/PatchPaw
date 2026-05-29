@@ -481,6 +481,57 @@ class TestSummaryJson:
         # 合計も round(_, 2) されてるが、1.23 + 4.56 = 5.79 ちょうど
         assert s["llm_elapsed_total_s"] == 5.79
 
+    # ─── 適用 patch ファイルパス (v2.3.x) ───
+
+    def test_summary_patch_files_default_empty(self, tmp_path, monkeypatch):
+        """patch_files を持たないスタブでも summary は壊れず [] / 0 で出る。"""
+        monkeypatch.setattr("patchpaw.runner.Controller", _StubController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["task A"])
+
+        s = self._read_summary(tmp_path)
+        assert s["patches_total"] == 0
+        assert s["tasks"][0]["patch_files"] == []
+
+    def test_summary_aggregates_patch_files(self, tmp_path, monkeypatch):
+        """RunResult.patch_files が per-task に出て、patches_total に集計される。"""
+        from patchpaw.controller import RunResult
+
+        class _PatchController:
+            def __init__(self, repo_root, config, *, max_iterations, approval_callback):
+                pass
+            def run(self, instruction, file_hints, test_command,
+                    previous_task_changes=None):
+                if instruction == "task A":
+                    return RunResult(
+                        success=True, iterations=2,
+                        final_output="", final_test_output="", message="完了",
+                        patch_files=[
+                            "sessions/20260529_120000_iter1.patch",
+                            "sessions/20260529_120000_iter2.patch",
+                        ],
+                    )
+                return RunResult(
+                    success=True, iterations=1,
+                    final_output="", final_test_output="", message="完了",
+                    patch_files=["sessions/20260529_120100_iter1.patch"],
+                )
+
+        monkeypatch.setattr("patchpaw.runner.Controller", _PatchController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["task A", "task B"])
+
+        s = self._read_summary(tmp_path)
+        assert s["tasks"][0]["patch_files"] == [
+            "sessions/20260529_120000_iter1.patch",
+            "sessions/20260529_120000_iter2.patch",
+        ]
+        assert s["tasks"][1]["patch_files"] == [
+            "sessions/20260529_120100_iter1.patch",
+        ]
+        # patches_total = 2 + 1
+        assert s["patches_total"] == 3
+
 
 # ────────────────────────────────────────────
 # TaskRunner carry_context (v2.2)

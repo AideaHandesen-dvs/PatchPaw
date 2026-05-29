@@ -50,6 +50,11 @@ class RunResult:
     # duration_s (タスク全体の wall-clock) ではなく LLM 呼び出しだけの合計。
     # テスト実行や承認待ちは含まない。
     llm_elapsed_s: float = 0.0
+    # 適用された patch ファイルのパス (repo_root からの相対)。
+    # apply 成功した iteration のみ蓄積される (apply 失敗 iteration は
+    # save_diff を呼ばないので入らない)。テスト失敗で再試行した
+    # iteration のパッチも残るので、ロールバック前のデバッグに使える。
+    patch_files: list[str] = field(default_factory=list)
 
 
 class Controller:
@@ -112,6 +117,8 @@ class Controller:
         total_tokens_total = 0
         # LLM 呼び出し時間の累積 (秒)。各 iteration の elapsed を足していく。
         llm_elapsed_total = 0.0
+        # 適用された patch ファイルのパス (repo_root 相対) を iteration 順に蓄積。
+        applied_patch_files: list[str] = []
 
         for iteration in range(1, self.max_iterations + 1):
             self.progress(f"\n🤖 LLM に変更案を生成依頼 (試行 {iteration}/{self.max_iterations})...")
@@ -159,6 +166,7 @@ class Controller:
                     completion_tokens=completion_tokens_total,
                     total_tokens=total_tokens_total,
                     llm_elapsed_s=llm_elapsed_total,
+                    patch_files=applied_patch_files,
                 )
 
             if not llm_output.strip():
@@ -172,6 +180,7 @@ class Controller:
                     completion_tokens=completion_tokens_total,
                     total_tokens=total_tokens_total,
                     llm_elapsed_s=llm_elapsed_total,
+                    patch_files=applied_patch_files,
                 )
 
             # ---- 検証 ----
@@ -210,6 +219,7 @@ class Controller:
                     completion_tokens=completion_tokens_total,
                     total_tokens=total_tokens_total,
                     llm_elapsed_s=llm_elapsed_total,
+                    patch_files=applied_patch_files,
                 )
 
             # ---- 適用 ----
@@ -223,6 +233,13 @@ class Controller:
 
             patch_path = self.session.save_diff(llm_output, label=f"iter{iteration}")
             self.progress(f"   保存: {patch_path}")
+            # repo_root 相対パスで蓄積 (移植性のため絶対パスにしない)
+            try:
+                rel = str(patch_path.relative_to(self.root))
+            except ValueError:
+                # patch_path が repo_root の外にある場合 (通常起きないが念のため)
+                rel = str(patch_path)
+            applied_patch_files.append(rel)
 
             # ---- テスト実行 ----
             self.progress("🧪 テスト実行中...")
@@ -253,6 +270,7 @@ class Controller:
                     completion_tokens=completion_tokens_total,
                     total_tokens=total_tokens_total,
                     llm_elapsed_s=llm_elapsed_total,
+                    patch_files=applied_patch_files,
                 )
 
             self.progress(f"⚠️  テスト失敗 (試行 {iteration})。再試行します...")
@@ -269,4 +287,5 @@ class Controller:
             completion_tokens=completion_tokens_total,
             total_tokens=total_tokens_total,
             llm_elapsed_s=llm_elapsed_total,
+            patch_files=applied_patch_files,
         )
