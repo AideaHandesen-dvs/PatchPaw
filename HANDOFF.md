@@ -64,7 +64,9 @@ zip だけだと Claude 側の展開挙動が実装依存なので、tree 出力
 (pawagent POSTMORTEM v2 参照) を防ぐ。
 
 - [ ] `python -m pytest tests/ -v` が緑
-- [ ] `grep -rn <削除/変更対象キーワード> .` で残骸ゼロ
+- [ ] **削除・リネーム・シンボル置換を含むタスクなら** `grep -rn <旧名> .` で
+      残骸ゼロ (純粋な追加・ドキュメント更新タスクでは対象キーワードが無いので
+      スキップ可)
 - [ ] DESIGN.md の該当 Section を更新
 - [ ] TODO.md の完了マークを付ける (or 該当項目を `tasks_done.txt` へ退避)
 - [ ] HANDOFF.md の「5. 進行中のタスク」を更新
@@ -164,6 +166,35 @@ cat .patchpaw/test-cmd
 
 `config-selftest.yaml` 等のカスタム名は **2 (環境変数) で渡す** か
 `--config` 明示が必要。カレントに置いただけでは拾われない。
+
+### 4.7 ドッグフーディング前に未 commit を消化しろ
+
+`runner.py` の `_git_commit_and_tag` は **`git add -A`** で commit する
+(`runner.py:248` 付近)。tracked/untracked 区別せず作業ツリー全体を拾うので、
+ドッグフーディング前に WIP/untracked が残っていると、PatchPaw の自動 commit が
+それを巻き込み、`patchpaw-task-N-<timestamp>` タグが「タスク N の純粋な変更」
+を指さなくなる。失敗時に `git reset --hard <pre-tag>` でロールバックすると
+自分の WIP も巻き添えで消える。
+
+`config-selftest.yaml` の `allowed_paths` を絞っていても **無意味**。
+`allowed_paths` は `DiffValidator` レベルで LLM 出力のパッチ対象を絞るだけで、
+commit 時の `git add -A` には掛からない。git レベルで切っておく必要がある。
+
+事前確認:
+
+```bash
+git status                          # working tree clean を確認
+# 残ってたら退避:
+git stash -u                        # untracked も含めて stash
+# または事前 commit:
+git add -A && git commit -m wip
+# 念のためロールバック点を打つ:
+git tag pre-dogfood-$(date +%Y%m%d-%H%M%S)
+```
+
+`--no-commit-per-task` で走らせれば自動 commit 自体を止められるが、その場合は
+タスク間のロールバック点も無くなるので別のリスクと交換しているだけ。
+基本は **clean にしてから走らせる**。
 
 ---
 
