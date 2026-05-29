@@ -69,3 +69,15 @@ patchpaw/
 
 3. repo-map (関連ファイル自動選択)
    - 動機: 大きいプロジェクトで allowed_paths 全体を読み込むとコンテキストが膨らむ
+
+## 次の改善テーマ (優先度順)
+
+1. sed風の一括置換ブロック (DELETE_PATTERN 等) を追加
+   - 動機: 同一ファイル多数箇所の機械的変更が SEARCH/REPLACE では出力上限に当たる
+   - PawAgent の test_safety.py 改造で実証された限界
+
+2. patchpaw-run.sh を Python 化して `patchpaw run tasks.txt` サブコマンド化
+   - 動機: タスク間の文脈引き継ぎ (前タスクで変更したファイルを次タスクに自動で渡す)
+
+3. repo-map (関連ファイル自動選択)
+   - 動機: 大きいプロジェクトで allowed_paths 全体を読み込むとコンテキストが膨らむ
