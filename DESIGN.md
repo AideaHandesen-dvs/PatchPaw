@@ -413,7 +413,49 @@ MIT License
 
 ---
 
-# 20. Summary
+# 20. Project Knowledge Layout (for Claude Projects)
+
+PatchPaw 自身を Claude Projects で開発する場合、リポジトリ全体を zip にまとめて
+Project knowledge にアップロードしてはならない。`git ls-files` で出る個別ファイルを
+そのままアップロードする。
+
+## Rationale
+
+- Claude.ai のブラウザ UI でユーザーが各ファイルの中身を直接確認できる。
+  zip では中身が見えるのは Claude (サンドボックス内で展開できる) だけで、
+  ユーザーには見えない。これは「Project knowledge に何が入っているか」を
+  ユーザーが自分の目で監査できないことを意味し、共有状態の信頼性を損なう。
+- `git ls-files` は `.gitignore` を尊重するので、`sessions/`, `.env`, ビルド
+  成果物などが自動的に除外される。
+- 数ファイルだけ変えたとき、zip を作り直す必要がなく、変更ファイルだけ
+  差し替えればよい。
+
+## Upload procedure
+
+```bash
+cd ~/patchpaw
+git ls-files
+# 出てきたファイルをファイルマネージャで全選択し、
+# Claude Projects の Project knowledge パネルにドラッグ&ドロップ
+```
+
+ディレクトリ構造を保ったまま別マシンに転送してから上げる場合:
+
+```bash
+rsync -R $(git ls-files) <remote>:<target>/
+```
+
+## Refresh routine
+
+- **変更ごと**: 変更ファイルだけ Project knowledge で差し替える
+- **フルリセット**: Project knowledge を全削除し、`git ls-files` の出力を再アップロード
+- **セッション終了時**: コードを変更したなら、対応するファイルを Project knowledge にも
+  反映してから閉じる。これを怠るとリポジトリの実態と Project knowledge が乖離し、
+  次セッションの Claude が古い情報で動く
+
+---
+
+# 21. Summary
 
 PatchPaw is a secure AI coding assistant based on a simple principle:
 
