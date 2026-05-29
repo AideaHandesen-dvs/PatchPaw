@@ -1,0 +1,29 @@
+llm:
+  provider: openai
+  model: deepseek-v4-flash
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
+  max_tokens: 8192
+  temperature: 0.0
+
+sandbox:
+  docker_image: python:3.12-slim
+  network_disabled: true
+  timeout_seconds: 600
+  memory_limit: 512m
+
+repository:
+  # selftest 専用: ドッグフーディング時の事故を防ぐため
+  # PatchPaw コア (cli.py, controller.py 等) は触れないよう絞っている
+  allowed_paths:
+    - patchpaw/utils.py
+    - tests/test_utils.py
+  denied_patterns:
+    - "*.env"
+    - ".env*"
+    - "sessions/"
+    - "**/.git/**"
+
+session:
+  storage_dir: sessions/
+  max_history: 20

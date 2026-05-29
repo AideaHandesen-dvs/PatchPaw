@@ -1,0 +1,8 @@
+# P1 v1 スモークテスト: 単一タスク成功パターン
+# 期待結果:
+#   - patchpaw/utils.py の docstring が1行増える
+#   - tests/test_utils.py の既存3テストが通る
+#   - sessions/ に jsonl と patch が残る
+#   - commit_per_task が有効なら git tag が打たれる
+
+patchpaw/utils.py の format_duration 関数の docstring に、既存の「60秒以上: "{m}m {s:.0f}s" (例: "1m 30s")」の行のすぐ後に、「60秒ちょうどは "1m 0s" になる（境界値）」という説明を1行追加する。既存テストは壊さないこと
