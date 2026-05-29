@@ -17,7 +17,7 @@ Controller
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -40,6 +40,7 @@ class RunResult:
     final_output: str
     final_test_output: str
     message: str
+    affected_files: list[str] = field(default_factory=list)
 
 
 class Controller:
@@ -78,6 +79,7 @@ class Controller:
         instruction: str,
         file_hints: list[str] | None = None,
         test_command: str = "python -m pytest tests/ -v --tb=short",
+        previous_task_changes: list[str] | None = None,
     ) -> RunResult:
         self.progress(f"📂 ファイル収集中 ({'指定ファイル' if file_hints else 'ホワイトリスト全体'})...")
         files = self.reader.collect_files(file_hints)
@@ -103,6 +105,7 @@ class Controller:
                 previous_output=previous_output,
                 iteration=iteration,
                 project_context=self.project_context,
+                previous_task_changes=previous_task_changes,
             )
 
             try:
@@ -198,6 +201,7 @@ class Controller:
                     final_output=llm_output,
                     final_test_output=result.output,
                     message="完了",
+                    affected_files=validation.affected_files,
                 )
 
             self.progress(f"⚠️  テスト失敗 (試行 {iteration})。再試行します...")

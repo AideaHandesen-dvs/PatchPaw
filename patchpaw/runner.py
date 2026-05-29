@@ -87,6 +87,7 @@ class TaskRunner:
         test_cmd: str | None = None,
         start_from: int = 1,
         run_id: str | None = None,
+        carry_context: bool = True,
     ):
         self.repo_root = Path(repo_root).resolve()
         self.config = config
@@ -100,6 +101,10 @@ class TaskRunner:
         # とは別物。summary JSON のファイル名にも使われる。
         self.run_id = run_id or datetime.now().strftime("run_%Y%m%d_%H%M%S")
         self.started_at = datetime.now(timezone.utc).isoformat()
+        # carry_context: 直前タスクで変更されたファイル一覧を次タスクの
+        # プロンプトに自動注入する (v2.2 設計案 D + F)
+        self.carry_context = carry_context
+        self._last_affected_files: list[str] = []
         self.results: list[TaskResult] = []
 
     # -------------------------------------------------- #
@@ -167,6 +172,12 @@ class TaskRunner:
     def _run_one(self, index: int, task: str, *, has_git: bool) -> bool:
         """1 タスクを実行し、成功なら True を返す。"""
         t_start = time.time()
+
+        # 直前タスクの変更ファイルを引き継ぐ (carry_context=True のとき)
+        prev_changes = self._last_affected_files if self.carry_context else None
+        if prev_changes:
+            print(f"   📎 引き継ぎ: 直前タスクで変更されたファイル {prev_changes}")
+
         try:
             controller = Controller(
                 repo_root=self.repo_root,
@@ -178,6 +189,7 @@ class TaskRunner:
                 instruction=task,
                 file_hints=None,
                 test_command=self.test_cmd,
+                previous_task_changes=prev_changes,
             )
             dur = time.time() - t_start
             self.results.append(TaskResult(
@@ -190,12 +202,18 @@ class TaskRunner:
 
             if result.success:
                 print(f"✓ 完了 ({dur:.1f}s): {task}")
+                # 次タスクへの引き継ぎ用に affected_files を保持
+                # ("変更不要" 判定で affected_files が空のときは前回の値を温存しない =
+                # 「直前の実変更」をルールにする)
+                self._last_affected_files = list(result.affected_files)
                 if self.commit_per_task and has_git:
                     self._git_commit_and_tag(index, task)
                 return True
             else:
                 print(f"✗ 失敗 ({dur:.1f}s): {task}")
                 print(f"   {result.message}")
+                # 失敗時は affected_files をリセットしない
+                # (前回成功時の文脈を次へ引き継ぐ余地を残す)
                 return False
 
         except Exception as e:

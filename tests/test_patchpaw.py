@@ -180,6 +180,42 @@ class TestPromptBuilder:
         assert "Previous Output" in combined
         assert "FAILED" in combined
 
+    def test_previous_task_changes_injected(self):
+        """previous_task_changes が渡されたら user_parts にセクションが入る (v2.2)。"""
+        from patchpaw.prompt_builder import PromptBuilder
+        pb = PromptBuilder()
+        msgs = pb.build(
+            instruction="次のタスク",
+            file_contents={"src/a.py": "pass"},
+            previous_task_changes=["src/foo.py", "tests/test_foo.py"],
+        )
+        combined = msgs[1]["content"]
+        assert "Previous Task's Changes" in combined
+        assert "src/foo.py" in combined
+        assert "tests/test_foo.py" in combined
+
+    def test_previous_task_changes_none_omitted(self):
+        """previous_task_changes=None なら該当セクションは出ない。"""
+        from patchpaw.prompt_builder import PromptBuilder
+        pb = PromptBuilder()
+        msgs = pb.build(
+            instruction="foo",
+            file_contents={"src/a.py": "pass"},
+            previous_task_changes=None,
+        )
+        assert "Previous Task's Changes" not in msgs[1]["content"]
+
+    def test_previous_task_changes_empty_list_omitted(self):
+        """previous_task_changes=[] でも該当セクションは出ない。"""
+        from patchpaw.prompt_builder import PromptBuilder
+        pb = PromptBuilder()
+        msgs = pb.build(
+            instruction="foo",
+            file_contents={"src/a.py": "pass"},
+            previous_task_changes=[],
+        )
+        assert "Previous Task's Changes" not in msgs[1]["content"]
+
 
 # ────────────────────────────────────────────
 # Session Manager
@@ -200,4 +236,3 @@ class TestSessionManager:
         p = sm.save_diff(VALID_DIFF, label="iter1")
         assert p.exists()
         assert VALID_DIFF in p.read_text()
-

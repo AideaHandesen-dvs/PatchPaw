@@ -154,6 +154,7 @@ def cmd_run(args: argparse.Namespace, config: Config) -> int:
     max_iter        = args.max_iter        if args.max_iter        is not None else _env_int("MAX_ITER", 5)
     stop_on_fail    = args.stop_on_fail    if args.stop_on_fail    is not None else _env_bool("STOP_ON_FAIL", True)
     commit_per_task = args.commit_per_task if args.commit_per_task is not None else _env_bool("COMMIT_PER_TASK", True)
+    carry_context   = args.carry_context   if args.carry_context   is not None else _env_bool("CARRY_CONTEXT", True)
     dry_run         = args.dry_run         if args.dry_run                     else _env_bool("DRY_RUN", False)
     start_from      = (
         args.continue_from_task if args.continue_from_task is not None
@@ -189,6 +190,7 @@ def cmd_run(args: argparse.Namespace, config: Config) -> int:
         dry_run=dry_run,
         test_cmd=test_cmd,
         start_from=start_from,
+        carry_context=carry_context,
     )
     ok = runner.run_tasks(tasks)
     return 0 if ok else 1
@@ -288,6 +290,16 @@ def main() -> None:
         "--continue-from-task", dest="continue_from_task", type=int, default=None,
         metavar="N",
         help="タスクファイルの N 番目から開始 (1-indexed, env: CONTINUE_FROM_TASK)",
+    )
+    # --carry-context / --no-carry-context (v2.2)
+    run_parser.add_argument(
+        "--carry-context", dest="carry_context", action="store_true", default=None,
+        help="直前タスクの変更ファイルを次タスクのプロンプトに注入 "
+             "(env: CARRY_CONTEXT, default: 有効)",
+    )
+    run_parser.add_argument(
+        "--no-carry-context", dest="carry_context", action="store_false",
+        help="タスク間の文脈引き継ぎを無効化",
     )
 
     args = parser.parse_args()

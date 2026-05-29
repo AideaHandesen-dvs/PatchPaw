@@ -239,12 +239,13 @@ class TestContinueFromTask:
 
 class _StubRunResult:
     """Controller.run の戻り値を模した最小スタブ。"""
-    def __init__(self, success=True, iterations=1, message="完了"):
+    def __init__(self, success=True, iterations=1, message="完了", affected_files=None):
         self.success = success
         self.iterations = iterations
         self.message = message
         self.final_output = ""
         self.final_test_output = ""
+        self.affected_files = affected_files or []
 
 
 class _StubController:
@@ -255,7 +256,7 @@ class _StubController:
     def __init__(self, repo_root, config, *, max_iterations, approval_callback):
         pass
 
-    def run(self, instruction, file_hints, test_command):
+    def run(self, instruction, file_hints, test_command, previous_task_changes=None):
         if instruction.startswith("fail:"):
             return _StubRunResult(success=False, iterations=3, message="テスト失敗")
         return _StubRunResult(success=True, iterations=1, message="完了")
@@ -379,6 +380,138 @@ class TestSummaryJson:
         assert runner.run_id.startswith("run_")
         # 形式: run_YYYYMMDD_HHMMSS
         assert len(runner.run_id) == len("run_YYYYMMDD_HHMMSS")
+
+
+# ────────────────────────────────────────────
+# TaskRunner carry_context (v2.2)
+# ────────────────────────────────────────────
+
+class _RecordingController:
+    """previous_task_changes が何で呼ばれたかを記録するスタブ。"""
+    # クラス変数で記録 (各タスクで新しいインスタンスが作られるため)
+    call_log: list = []
+
+    def __init__(self, repo_root, config, *, max_iterations, approval_callback):
+        pass
+
+    def run(self, instruction, file_hints, test_command, previous_task_changes=None):
+        # 呼び出し時の previous_task_changes を記録
+        _RecordingController.call_log.append({
+            "instruction": instruction,
+            "previous_task_changes": (
+                list(previous_task_changes) if previous_task_changes else None
+            ),
+        })
+        # タスク文字列に応じた affected_files を返す
+        # 'changes:A,B' なら affected_files=['A', 'B']
+        # それ以外なら ['default.py']
+        affected = ["default.py"]
+        if instruction.startswith("changes:"):
+            affected = instruction.split(":", 1)[1].split(",")
+        from patchpaw.controller import RunResult
+        return RunResult(
+            success=True,
+            iterations=1,
+            final_output="",
+            final_test_output="",
+            message="完了",
+            affected_files=affected,
+        )
+
+
+class TestCarryContext:
+    """直前タスクの affected_files が次タスクに渡ることを検証する。"""
+
+    def setup_method(self):
+        _RecordingController.call_log = []
+
+    def _runner(self, tmp_path, **kwargs):
+        config = Config()
+        config.session.storage_dir = "sessions/"
+        kwargs.setdefault("commit_per_task", False)
+        kwargs.setdefault("run_id", "run_TEST")
+        return TaskRunner(
+            repo_root=tmp_path,
+            config=config,
+            **kwargs,
+        )
+
+    def test_first_task_has_no_previous_changes(self, tmp_path, monkeypatch):
+        """最初のタスクには previous_task_changes は渡されない (None)。"""
+        monkeypatch.setattr("patchpaw.runner.Controller", _RecordingController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["changes:foo.py"])
+
+        assert len(_RecordingController.call_log) == 1
+        assert _RecordingController.call_log[0]["previous_task_changes"] is None
+
+    def test_second_task_receives_first_task_changes(self, tmp_path, monkeypatch):
+        """2 タスク目には 1 タスク目の affected_files が渡る。"""
+        monkeypatch.setattr("patchpaw.runner.Controller", _RecordingController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["changes:foo.py,bar.py", "task two"])
+
+        assert len(_RecordingController.call_log) == 2
+        # 1 タスク目には何も渡らない
+        assert _RecordingController.call_log[0]["previous_task_changes"] is None
+        # 2 タスク目には 1 タスク目の変更が渡る
+        assert _RecordingController.call_log[1]["previous_task_changes"] == [
+            "foo.py", "bar.py"
+        ]
+
+    def test_three_task_chain_only_carries_immediate_previous(self, tmp_path, monkeypatch):
+        """3 タスク連鎖で、3 タスク目には 2 タスク目の変更だけ (累積しない)。"""
+        monkeypatch.setattr("patchpaw.runner.Controller", _RecordingController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks([
+            "changes:A.py",
+            "changes:B.py",
+            "task three",
+        ])
+
+        assert _RecordingController.call_log[0]["previous_task_changes"] is None
+        assert _RecordingController.call_log[1]["previous_task_changes"] == ["A.py"]
+        # A.py は含まれず B.py だけ (= 直前 1 タスクのみ、累積しない)
+        assert _RecordingController.call_log[2]["previous_task_changes"] == ["B.py"]
+
+    def test_carry_context_disabled(self, tmp_path, monkeypatch):
+        """carry_context=False ならどのタスクにも previous_task_changes は渡らない。"""
+        monkeypatch.setattr("patchpaw.runner.Controller", _RecordingController)
+        runner = self._runner(tmp_path, carry_context=False)
+        runner.run_tasks(["changes:foo.py", "task two", "task three"])
+
+        for entry in _RecordingController.call_log:
+            assert entry["previous_task_changes"] is None
+
+    def test_empty_affected_files_propagates(self, tmp_path, monkeypatch):
+        """直前タスクの affected_files が空なら次タスクには None として渡る
+        (PromptBuilder は空リストでもセクションを出さないので実害なし)。"""
+
+        # 空の affected_files を返す Controller スタブ
+        class _EmptyAffectedController:
+            def __init__(self, **kwargs):
+                pass
+            def run(self, instruction, file_hints, test_command, previous_task_changes=None):
+                _RecordingController.call_log.append({
+                    "instruction": instruction,
+                    "previous_task_changes": (
+                        list(previous_task_changes) if previous_task_changes else None
+                    ),
+                })
+                from patchpaw.controller import RunResult
+                return RunResult(
+                    success=True, iterations=1,
+                    final_output="", final_test_output="",
+                    message="変更不要", affected_files=[],
+                )
+
+        monkeypatch.setattr("patchpaw.runner.Controller", _EmptyAffectedController)
+        runner = self._runner(tmp_path)
+        runner.run_tasks(["task A", "task B"])
+
+        # 2 タスク目には空リスト or None が渡る (どちらでもセクションは出ない)
+        prev = _RecordingController.call_log[1]["previous_task_changes"]
+        assert prev is None or prev == []
 
 
 # ────────────────────────────────────────────

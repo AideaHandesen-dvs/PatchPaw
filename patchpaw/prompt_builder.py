@@ -47,6 +47,7 @@ class PromptBuilder:
         previous_output: str | None = None,
         iteration: int = 1,
         project_context: str | None = None,
+        previous_task_changes: list[str] | None = None,
     ) -> list[dict]:
         """
         Chat messages リストを返す。
@@ -56,6 +57,17 @@ class PromptBuilder:
         # 常時文脈（設計書・規約等）を最初に挿入
         if project_context:
             user_parts.append(f"## Project Context\n{project_context}")
+
+        # 直前タスクで変更されたファイル一覧
+        # （タスク連鎖時に LLM が前後関係を把握できるようにする）
+        if previous_task_changes:
+            files_listed = "\n".join(f"- {p}" for p in previous_task_changes)
+            user_parts.append(
+                "## Previous Task's Changes\n"
+                "The following files were modified in the previous task in this run. "
+                "Consider how the current task relates to these changes.\n"
+                f"{files_listed}"
+            )
 
         user_parts.append(f"## User Instruction\n{instruction}")
 
