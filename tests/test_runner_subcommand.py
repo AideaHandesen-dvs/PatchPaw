@@ -113,6 +113,126 @@ class TestTaskRunnerDryRun:
 
 
 # ────────────────────────────────────────────
+# TaskRunner (--continue-from-task)
+# ────────────────────────────────────────────
+
+class TestContinueFromTask:
+    """--continue-from-task N で N 番目以降から開始する挙動を検証する。"""
+
+    def test_skips_earlier_tasks(self, tmp_path, capsys, monkeypatch):
+        """start_from=2 のとき 1 番目はスキップされ 2 番目以降だけ表示される。"""
+        def _boom(*args, **kwargs):
+            raise AssertionError("Controller should not be instantiated in dry_run")
+        monkeypatch.setattr("patchpaw.runner.Controller", _boom)
+
+        runner = TaskRunner(
+            repo_root=tmp_path,
+            config=Config(),
+            dry_run=True,
+            commit_per_task=False,
+            start_from=2,
+        )
+        ok = runner.run_tasks(["task one", "task two", "task three"])
+
+        assert ok is True
+        out = capsys.readouterr().out
+        # task one はスキップされている = 表示されない
+        assert "task one" not in out
+        # task two と task three は実行 (dry-run でも表示) される
+        assert "[2/3] task two" in out
+        assert "[3/3] task three" in out
+        # 開始位置が告知されている
+        assert "開始タスク: 2" in out
+
+    def test_start_from_1_is_default_behavior(self, tmp_path, capsys, monkeypatch):
+        """start_from=1 (デフォルト) は従来通り 1 番目から開始。"""
+        def _noop(*args, **kwargs):
+            raise AssertionError("Controller should not be instantiated in dry_run")
+        monkeypatch.setattr("patchpaw.runner.Controller", _noop)
+
+        runner = TaskRunner(
+            repo_root=tmp_path,
+            config=Config(),
+            dry_run=True,
+            commit_per_task=False,
+            start_from=1,
+        )
+        ok = runner.run_tasks(["a", "b"])
+
+        assert ok is True
+        out = capsys.readouterr().out
+        assert "[1/2] a" in out
+        assert "[2/2] b" in out
+        # start_from=1 のときは「開始タスク」表示は出ない
+        assert "開始タスク" not in out
+
+    def test_out_of_range_too_high(self, tmp_path, capsys):
+        """start_from がタスク数を超えるとエラーになる。"""
+        runner = TaskRunner(
+            repo_root=tmp_path,
+            config=Config(),
+            dry_run=True,
+            commit_per_task=False,
+            start_from=99,
+        )
+        ok = runner.run_tasks(["a", "b", "c"])
+
+        assert ok is False
+        out = capsys.readouterr().out
+        assert "範囲外" in out
+        assert "99" in out
+
+    def test_out_of_range_zero(self, tmp_path, capsys):
+        """start_from=0 もエラー (1-indexed なので)。"""
+        runner = TaskRunner(
+            repo_root=tmp_path,
+            config=Config(),
+            dry_run=True,
+            commit_per_task=False,
+            start_from=0,
+        )
+        ok = runner.run_tasks(["a", "b"])
+
+        assert ok is False
+        assert "範囲外" in capsys.readouterr().out
+
+    def test_out_of_range_negative(self, tmp_path, capsys):
+        """負の値もエラー。"""
+        runner = TaskRunner(
+            repo_root=tmp_path,
+            config=Config(),
+            dry_run=True,
+            commit_per_task=False,
+            start_from=-1,
+        )
+        ok = runner.run_tasks(["a"])
+
+        assert ok is False
+        assert "範囲外" in capsys.readouterr().out
+
+    def test_start_from_last_task(self, tmp_path, capsys, monkeypatch):
+        """start_from がちょうど最後のタスク番号なら 1 タスクだけ実行される。"""
+        monkeypatch.setattr("patchpaw.runner.Controller",
+                            lambda *a, **kw: (_ for _ in ()).throw(
+                                AssertionError("dry_run なのに Controller が呼ばれた")
+                            ))
+
+        runner = TaskRunner(
+            repo_root=tmp_path,
+            config=Config(),
+            dry_run=True,
+            commit_per_task=False,
+            start_from=3,
+        )
+        ok = runner.run_tasks(["a", "b", "c"])
+
+        assert ok is True
+        out = capsys.readouterr().out
+        assert "a" not in out.split("━━━")[1] if "━━━" in out else True
+        assert "[3/3] c" in out
+
+
+# ────────────────────────────────────────────
 # cli ヘルパ
 # ────────────────────────────────────────────
 

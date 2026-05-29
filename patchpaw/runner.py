@@ -84,6 +84,7 @@ class TaskRunner:
         commit_per_task: bool = True,
         dry_run: bool = False,
         test_cmd: str | None = None,
+        start_from: int = 1,
     ):
         self.repo_root = Path(repo_root).resolve()
         self.config = config
@@ -92,6 +93,7 @@ class TaskRunner:
         self.commit_per_task = commit_per_task
         self.dry_run = dry_run
         self.test_cmd = test_cmd or self.DEFAULT_TEST_CMD
+        self.start_from = start_from  # 1-indexed。タスクファイルの N 番目から開始
         self.results: list[TaskResult] = []
 
     # -------------------------------------------------- #
@@ -105,11 +107,21 @@ class TaskRunner:
             print("タスクが空です。")
             return False
 
+        # start_from の範囲チェック
+        if self.start_from < 1 or self.start_from > total:
+            print(
+                f"❌ --continue-from-task {self.start_from} は範囲外です "
+                f"(有効範囲: 1〜{total})"
+            )
+            return False
+
         has_git = self._is_git_repo()
         if self.commit_per_task and not has_git and not self.dry_run:
             print("⚠️  git リポジトリ外なので commit/tag は無効化されます。")
 
         print(f"▶ タスク数: {total}")
+        if self.start_from > 1:
+            print(f"▶ 開始タスク: {self.start_from} (1〜{self.start_from - 1} はスキップ)")
         print(f"▶ テストコマンド: {self.test_cmd}")
         print(f"▶ 最大試行回数: {self.max_iter}")
         print(f"▶ リポジトリ: {self.repo_root}")
@@ -119,6 +131,8 @@ class TaskRunner:
 
         all_ok = True
         for i, task in enumerate(tasks, 1):
+            if i < self.start_from:
+                continue
             print(f"━━━ [{i}/{total}] {task} ━━━")
 
             if self.dry_run:
@@ -227,12 +241,19 @@ class TaskRunner:
     def _print_summary(self, total: int) -> None:
         succeeded = sum(1 for r in self.results if r.success)
         failed = [r for r in self.results if not r.success]
+        executed = len(self.results)
         print()
         print("═══ サマリ ═══")
         if self.dry_run:
             print("DRY-RUN 完了。実行されたタスクはありません。")
             return
-        print(f"✓ 成功: {succeeded} / {total}")
+        if self.start_from > 1:
+            print(
+                f"✓ 成功: {succeeded} / {executed} "
+                f"(タスク {self.start_from} から開始、総 {total} タスク)"
+            )
+        else:
+            print(f"✓ 成功: {succeeded} / {total}")
         if failed:
             print(f"✗ 失敗: {len(failed)}")
             for f in failed:

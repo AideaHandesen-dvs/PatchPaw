@@ -155,6 +155,10 @@ def cmd_run(args: argparse.Namespace, config: Config) -> int:
     stop_on_fail    = args.stop_on_fail    if args.stop_on_fail    is not None else _env_bool("STOP_ON_FAIL", True)
     commit_per_task = args.commit_per_task if args.commit_per_task is not None else _env_bool("COMMIT_PER_TASK", True)
     dry_run         = args.dry_run         if args.dry_run                     else _env_bool("DRY_RUN", False)
+    start_from      = (
+        args.continue_from_task if args.continue_from_task is not None
+        else _env_int("CONTINUE_FROM_TASK", 1)
+    )
 
     # test_cmd 解決: CLI > env > .patchpaw/test-cmd > default
     if args.test_cmd:
@@ -184,6 +188,7 @@ def cmd_run(args: argparse.Namespace, config: Config) -> int:
         commit_per_task=commit_per_task,
         dry_run=dry_run,
         test_cmd=test_cmd,
+        start_from=start_from,
     )
     ok = runner.run_tasks(tasks)
     return 0 if ok else 1
@@ -278,6 +283,11 @@ def main() -> None:
         "--test-cmd", default=None,
         help="テストコマンド (env: PATCHPAW_TEST_CMD, "
              "未指定時は .patchpaw/test-cmd → デフォルトの順で解決)",
+    )
+    run_parser.add_argument(
+        "--continue-from-task", dest="continue_from_task", type=int, default=None,
+        metavar="N",
+        help="タスクファイルの N 番目から開始 (1-indexed, env: CONTINUE_FROM_TASK)",
     )
 
     args = parser.parse_args()
