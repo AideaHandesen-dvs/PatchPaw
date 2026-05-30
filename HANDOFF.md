@@ -238,6 +238,37 @@ git tag pre-dogfood-$(date +%Y%m%d-%H%M%S)
   Trusted Component と明記されていたが、`_resolve` 関連のエッジケーステスト
   は皆無だった
 
+### 4.9 長セッションで Claude 自身の作業記憶が消失する
+
+2026-05-30 のセッション後半で、Claude が「セキュリティバグを新規発見した」と
+報告したが、実は同じセッションの早い段階で **Claude 自身が既にそのバグを
+修正・commit していた** (`cd8129a security: fix whitelist bypass via path
+traversal`)。Claude のチャット context が長くなり、該当作業の記録が
+context から消失していた (内部的に "Older tool result cleared to save
+context" が複数回発火)。Claude 自身は記憶がない状態で「未修正の脆弱コード」
+として `repository_reader.py` を読んでしまい、既に修正済みのコードを
+「これからバグ修正する」と言い出した。
+
+`git log` を貼ってもらって初めて、修正が `cd8129a` で既に取り込まれていた
+ことが分かった。Claude は同じ作業をもう一度やろうとしていた。
+
+教訓:
+- **git の状態が source of truth**。Claude の「未着手」「新規発見」「これから
+  実装する」発言は補助情報。`git log --oneline` と HANDOFF.md / TODO.md の
+  完了履歴を**常に**正として扱う
+- **長セッションで Claude が新規発見・新規実装を提案したら、ユーザー側で
+  git log を貼って整合確認する**。特に「テスト網羅性」「リファクタリング」
+  系のタスクで Claude がコードを読み直し始めたタイミングは要注意
+- **区切りで commit する運用は Claude の記憶消失対策にもなる**。commit log は
+  Claude の context から独立した不変記録。罠 4.7 (clean にしてから走らせる)
+  と整合する
+- **1 セッション = 数 commit の粒度で進める**。記憶消失リスクを考えると、
+  「1 セッションで全部やる」より「区切りで commit して次セッションに引き継ぐ」
+  方が安全。HANDOFF.md を充実させる動機もこれ
+- **outputs ディレクトリは Claude のメモリより信頼できる**。Claude が
+  「これから出力する」と言うファイルが `/mnt/user-data/outputs/` に既に
+  存在するなら、Claude は同じ作業を二重実行しようとしている
+
 ---
 
 ## 5. 進行中のタスクと次セッションへの引き継ぎ
