@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Iterator
 
 from .config import Config
+from .utils import canonicalize_repo_relative
 
 
 class SecurityError(Exception):
@@ -30,9 +31,12 @@ class RepositoryReader:
 
     def read_file(self, rel_path: str) -> str:
         """ホワイトリスト検査後にファイルを返す。"""
-        abs_path = self._resolve(rel_path)
-        self._check_allowed(rel_path)
-        self._check_denied(rel_path)
+        abs_path, canonical_rel = self._resolve(rel_path)
+        # `..` や `./` を解決した正規化済み相対パスで検査する。
+        # rel_path の生文字列を信用すると "src/../etc/passwd" のような
+        # traversal が _check_allowed の startswith("src/") を素通りする。
+        self._check_allowed(canonical_rel)
+        self._check_denied(canonical_rel)
         return abs_path.read_text(encoding="utf-8", errors="replace")
 
     def collect_files(self, hints: list[str] | None = None) -> dict[str, str]:
@@ -57,12 +61,22 @@ class RepositoryReader:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _resolve(self, rel_path: str) -> Path:
-        abs_path = (self.root / rel_path).resolve()
-        # Path traversal 防止
-        if not str(abs_path).startswith(str(self.root)):
-            raise SecurityError(f"パストラバーサル検知: {rel_path}")
-        return abs_path
+    def _resolve(self, rel_path: str) -> tuple[Path, str]:
+        """rel_path を絶対パスに変換しつつ traversal を防ぐ。
+
+        戻り値: (絶対パス, repo_root からの正規化済み相対パス)
+        canonical_rel は `..` や `./` を resolve 済みなので、
+        以降の allowed/denied 検査で生文字列のすり抜けを防げる。
+
+        実装は utils.canonicalize_repo_relative に集約 (diff_validator,
+        patch_applier も同じヘルパーを使うことで 3 箇所での共通化漏れを
+        防ぐ)。ValueError を SecurityError にラップして既存呼び出し側の
+        例外処理 (collect_files の except) を壊さない。
+        """
+        try:
+            return canonicalize_repo_relative(self.root, rel_path)
+        except ValueError as e:
+            raise SecurityError(f"パストラバーサル検知: {rel_path}") from e
 
     def _check_allowed(self, rel_path: str) -> None:
         for pattern in self.allowed_paths:

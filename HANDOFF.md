@@ -221,6 +221,23 @@ git tag pre-dogfood-$(date +%Y%m%d-%H%M%S)
 方針で進めること。直接テストの追加は P2 のように本来のスコープを少し
 広げるが、副次バグ発見の利得が大きい。
 
+**実例 (2026-05-29 セキュリティ修正)**: 罠 4.8 を書いた直後、テスト網羅性
+タスクの一環で `repository_reader` の挙動確認をしたところ、
+`src/../etc/passwd` が allowed_paths を回避するバグを発見。さらに調査して
+`diff_validator` / `patch_applier` の 3 箇所に**同じバグ**が分散している
+ことが判明 (= 共通化漏れ)。`utils.canonicalize_repo_relative` /
+`normalize_relative_path` の 2 ヘルパーに集約して 3 箇所同時修正。
+
+教訓の追加:
+- **同じ責務 (repo_root に対する path 正規化) が複数クラスにある場合、
+  共通ヘルパーに集約する**。1 箇所にバグがあれば他 2 箇所にも同じバグが
+  ある可能性が高い (実例: `_check_allowed` / `_is_allowed` / `_resolve_safe`
+  でそれぞれ生 rel_path を信用していた)
+- **「セキュリティ境界」と DESIGN.md に書かれているコンポーネントには
+  特に直接テストを充実させる**。`repository_reader` は DESIGN.md §8 で
+  Trusted Component と明記されていたが、`_resolve` 関連のエッジケーステスト
+  は皆無だった
+
 ---
 
 ## 5. 進行中のタスクと次セッションへの引き継ぎ
@@ -236,17 +253,17 @@ git tag pre-dogfood-$(date +%Y%m%d-%H%M%S)
 
 優先度順:
 
-1. **P3 repo-map**: `--files` 未指定時の関連ファイル自動選択。
-   設計案を出す段階でチャット相談 (TODO.md §P3 に「軽量第一案」と
-   「未設計のまま」のセクションあり)。
-2. **テスト網羅性の埋め合わせ**: 罠 4.8 で挙げた未テスト/低密度
-   コンポーネントの回帰テスト整備。次に該当コンポーネント (例:
-   `repository_reader`, `cli`, `controller`) を触る時に**先に**書く方針。
-   タスクとしては個別に切る必要なし、機会駆動で OK。
+1. **P3 repo-map**: 保留 (TODO.md §P3)。実機でコンテキスト不足の事例が
+   出てから設計議論する。
+2. **テスト網羅性の埋め合わせ (継続)**: 2026-05-29 のセキュリティ修正で
+   `repository_reader` / `diff_validator` / `patch_applier` の path
+   検証は厚くなったが、まだ `cli`、`controller` の直接テスト不足。
+   罠 4.8 の方針通り、これらを触るタイミングで先に回帰テストを書く。
 
 v2.3.x (サマリ JSON 拡張) は 2026-05-29 に全完了:
 LLM トークン使用量・LLM 応答時間・適用 patch ファイルパス。
 P2 (`SEARCH_ALL`/`REPLACE_ALL`) も 2026-05-29 完了。
+セキュリティ修正 (path 正規化 3 箇所共通化) も 2026-05-29 完了。
 
 ### 5.3 v2.2 設計 (実装済み、参考記録)
 

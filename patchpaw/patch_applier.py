@@ -22,6 +22,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .utils import canonicalize_repo_relative
+
 
 # FILE: path\n<<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE
 # path 部分は改行を含まない (DOTALL の下で `.+?` が改行を吸わないように
@@ -102,6 +104,24 @@ class PatchApplier:
     def __init__(self, repo_root: str | Path):
         self.root = Path(repo_root).resolve()
 
+    def _resolve_safe(self, rel_path: str) -> Path:
+        """block.file_path を絶対パスに変換しつつ traversal を防ぐ。
+
+        `repo_root / "src/../etc/passwd"` のような traversal を resolve した
+        絶対パスが repo_root の prefix にあるかで判定する。LLM 出力に
+        悪意ある FILE: パスが含まれていても、ここで弾く。
+
+        実装は utils.canonicalize_repo_relative に集約 (repository_reader
+        と同じヘルパーを使うことで 3 箇所での共通化漏れを防ぐ)。canonical
+        rel は本クラスでは使わない (allowed_paths 検査は DiffValidator の
+        責務) ので絶対パスのみ返す。
+        """
+        try:
+            abs_path, _ = canonicalize_repo_relative(self.root, rel_path)
+        except ValueError as e:
+            raise ValueError(f"パストラバーサル検知: {rel_path}") from e
+        return abs_path
+
     def dry_run(self, llm_output: str) -> tuple[bool, str]:
         """実際には変更せず、適用できるかだけ確認する。"""
         blocks = parse_blocks(llm_output)
@@ -119,7 +139,11 @@ class PatchApplier:
 
         errors = []
         for block in blocks:
-            file_path = self.root / block.file_path
+            try:
+                file_path = self._resolve_safe(block.file_path)
+            except ValueError as e:
+                errors.append(f"{e} (block FILE: {block.file_path})")
+                continue
 
             # ───── SEARCH_ALL モード (リテラル全箇所置換) ─────
             if block.mode == "all":
@@ -184,18 +208,24 @@ class PatchApplier:
         if not blocks:
             return False, "SEARCH/REPLACEブロックが見つかりません。"
 
+        # 副作用 (ファイル書き込み・originals 保存) に入る前に、全 block の
+        # path を traversal 検査する。1 つでも repo 外を指していれば apply
+        # 全体を拒否 (= originals に repo 外パスが入り込むことを防ぐ)。
+        try:
+            resolved = [self._resolve_safe(b.file_path) for b in blocks]
+        except ValueError as e:
+            return False, str(e)
+
         # ロールバック用に元の状態を保存
         # str   → 既存ファイル（ロールバック時に内容を戻す）
         # None  → 新規作成（ロールバック時にファイルを削除）
         originals: dict[Path, str | None] = {}
-        for block in blocks:
-            p = self.root / block.file_path
+        for p in resolved:
             if p not in originals:
                 originals[p] = p.read_text(encoding="utf-8") if p.exists() else None
 
         try:
-            for block in blocks:
-                file_path = self.root / block.file_path
+            for block, file_path in zip(blocks, resolved):
 
                 # ───── SEARCH_ALL モード (リテラル全箇所置換) ─────
                 if block.mode == "all":

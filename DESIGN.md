@@ -124,6 +124,9 @@ All execution is performed by trusted controller components.
 ## 5.4 Patch Validation
 
 - Validate block syntax (both SEARCH/REPLACE and SEARCH_ALL/REPLACE_ALL)
+- Canonicalize file paths (`..` / `./` / 重複スラッシュ等を解決) before
+  comparing against whitelist, to prevent paths like `src/../etc/passwd`
+  from bypassing the `startswith("src/")` check
 - Restrict modified paths to whitelist
 - Detect dangerous patterns in REPLACE / REPLACE_ALL blocks
   (`DANGEROUS_PATTERNS` は `block.replace` に対して走るので、両モードに
@@ -207,11 +210,21 @@ for format errors, dangerous patterns, and out-of-scope file paths.
 `DANGEROUS_PATTERNS` は `block.replace` (= REPLACE と REPLACE_ALL の中身)
 に対して走るので両モードに自動適用される。
 
+ファイルパスは `utils.normalize_relative_path` で文字列正規化してから
+allowed_paths と照合する (FS にアクセスしない検証層なので resolve() は
+使わない)。`src/../etc/passwd` のような ホワイトリスト回避はここで弾く。
+
 ## 7.6 Patch Applier
 
 Applies validated patches via literal string replacement.
 - SEARCH/REPLACE: 一意一致を要求 (`count == 1`)、`str.replace(s, r, 1)`
 - SEARCH_ALL/REPLACE_ALL: リテラル全箇所置換 (`count >= 1`)、`str.replace(s, r)`
+
+ファイルパスは `utils.canonicalize_repo_relative` で FS レベル正規化
+(resolve() 込み、symlink も解決) してから書き込みする。これで
+`..` や絶対パスで repo 外を指す path は ValueError として弾く
+(allowed_paths 外を弾くのは DiffValidator の責務、本クラスは traversal
+のみ)。
 
 Saves originals (per-file full content) for rollback on failure. 両モードが
 混在するブロックも、出現位置順に適用、いずれかが失敗したら全ファイルが

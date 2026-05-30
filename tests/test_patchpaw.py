@@ -89,6 +89,22 @@ class TestRepositoryReader:
         lst = r.list_allowed()
         assert any("main.py" in f for f in lst)
 
+    def test_dotdot_whitelist_bypass_blocked(self, repo):
+        """セキュリティ回帰: `src/../etc/passwd` のような ホワイトリスト
+        回避を canonicalize 後の path で reject する。修正前は
+        `startswith("src/")` で素通りして etc/passwd を読めていた。
+        """
+        from patchpaw.repository_reader import SecurityError
+        # repo 内に偽 etc/passwd を作る (allowed_paths は src/ のみ)
+        (repo / "etc").mkdir()
+        (repo / "etc" / "passwd").write_text("SECRET_DATA")
+        r = self._reader(repo)
+        with pytest.raises(SecurityError):
+            r.read_file("src/../etc/passwd")
+        # 直接 etc/passwd 指定でも当然 reject
+        with pytest.raises(SecurityError):
+            r.read_file("etc/passwd")
+
 
 # ────────────────────────────────────────────
 # Diff Validator
@@ -148,6 +164,42 @@ class TestDiffValidator:
         r = validator.validate(OUTSIDE_DIFF)
         assert not r.ok
         assert any("ホワイトリスト外" in e for e in r.errors)
+
+    def test_dotdot_whitelist_bypass_blocked(self, validator):
+        """セキュリティ回帰: `src/../etc/passwd` のような path を
+        ホワイトリスト外として弾く。修正前は startswith('src/') で素通り。
+        """
+        diff = textwrap.dedent("""\
+            FILE: src/../etc/passwd
+            <<<<<<< SEARCH
+            x
+            =======
+            y
+            >>>>>>> REPLACE
+        """)
+        r = validator.validate(diff)
+        assert not r.ok
+        # canonicalize 後の "etc/passwd" は allowed_paths に該当しない
+        assert any(
+            "ホワイトリスト外" in e or "無効なパス" in e
+            for e in r.errors
+        )
+        # affected_files にも正規化済みパスで一意化される
+        # (raw "src/../etc/passwd" が残らない)
+        assert "src/../etc/passwd" not in r.affected_files
+
+    def test_absolute_path_blocked(self, validator):
+        diff = textwrap.dedent("""\
+            FILE: /etc/passwd
+            <<<<<<< SEARCH
+            x
+            =======
+            y
+            >>>>>>> REPLACE
+        """)
+        r = validator.validate(diff)
+        assert not r.ok
+        assert any("無効なパス" in e or "ホワイトリスト外" in e for e in r.errors)
 
 
 # ────────────────────────────────────────────
@@ -500,6 +552,40 @@ class TestPatchApplierUnique:
         ok, msg = PatchApplier(tmp_path).apply(diff)
         assert ok, msg
         assert (tmp_path / "new.py").read_text() == 'print("hello")\n'
+
+    def test_dotdot_path_does_not_write_outside_allowed(self, tmp_path):
+        """セキュリティ回帰: `src/../etc/passwd` のような path を patch_applier
+        が受け取っても、_resolve_safe で root 内に解決される
+        (allowed_paths 外を読み書きできるかは DiffValidator の責務)。
+        本テストは patch_applier 単体での traversal 検出を回帰確認:
+          - 絶対パス指定 → ValueError → apply 拒否
+          - `..` で root の外を指す → ValueError → apply 拒否
+        """
+        from patchpaw.patch_applier import PatchApplier
+        # 絶対パス
+        diff_abs = textwrap.dedent("""\
+            FILE: /tmp/should_not_be_written
+            <<<<<<< SEARCH
+            =======
+            PWNED
+            >>>>>>> REPLACE
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff_abs)
+        assert not ok
+        assert "パストラバーサル検知" in msg
+        assert not Path("/tmp/should_not_be_written").exists()
+
+        # `..` で repo 外
+        diff_dotdot = textwrap.dedent("""\
+            FILE: ../outside.py
+            <<<<<<< SEARCH
+            =======
+            PWNED
+            >>>>>>> REPLACE
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff_dotdot)
+        assert not ok
+        assert "パストラバーサル検知" in msg
 
 
 class TestPatchApplierSearchAll:

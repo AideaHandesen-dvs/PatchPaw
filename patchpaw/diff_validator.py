@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 
 from .patch_applier import parse_blocks
+from .utils import normalize_relative_path
 
 
 # REPLACEブロック内で検出すべき危険パターン（行番号プレフィックスなし）
@@ -52,19 +53,33 @@ class DiffValidator:
             return ValidationResult(ok=False, errors=errors, affected_files=[])
 
         for block in blocks:
-            path = block.file_path
-            if path not in affected:
-                affected.append(path)
+            raw_path = block.file_path
+            # `..` や絶対パス等を normalize_relative_path で解決して
+            # repo 外なら即拒否。"src/../etc/passwd" のような ホワイトリスト
+            # 回避を防ぐため、以降のチェックは正規化済みパスで行う
+            # (生 raw_path を fnmatch / startswith に掛ける旧実装は脆弱)。
+            norm_path = normalize_relative_path(raw_path)
+            if norm_path is None:
+                errors.append(
+                    f"無効なパス (repo 外を指す、または絶対パス): {raw_path}"
+                )
+                continue
+
+            # affected_files も正規化後のパスで一意化
+            # (LLM が "./src/main.py" と "src/main.py" を別エントリで重複登録
+            #  しないように)
+            if norm_path not in affected:
+                affected.append(norm_path)
 
             # スコープチェック
-            if not self._is_allowed(path):
-                errors.append(f"ホワイトリスト外のファイルへの変更: {path}")
+            if not self._is_allowed(norm_path):
+                errors.append(f"ホワイトリスト外のファイルへの変更: {raw_path}")
 
-            # 危険パターン検査（REPLACEブロック内）
+            # 危険パターン検査（REPLACE / REPLACE_ALL ブロック内）
             for pattern in DANGEROUS_PATTERNS:
                 if re.search(pattern, block.replace):
                     errors.append(
-                        f"危険なパターンを検出 ({path}): {pattern}"
+                        f"危険なパターンを検出 ({raw_path}): {pattern}"
                     )
 
         return ValidationResult(
@@ -74,8 +89,12 @@ class DiffValidator:
         )
 
     def _is_allowed(self, path: str) -> bool:
+        """path は normalize_relative_path 済みであることを呼び出し側が保証する。
+
+        normalize 済みの前提で、生文字列のすり抜けは考えない。
+        """
         for allowed in self.allowed_paths:
             norm = allowed.rstrip("/")
-            if path == norm or path.startswith(norm + "/") or path == allowed:
+            if path == norm or path.startswith(norm + "/"):
                 return True
         return False
