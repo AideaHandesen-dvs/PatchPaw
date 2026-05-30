@@ -288,13 +288,18 @@ context" が複数回発火)。Claude 自身は記憶がない状態で「未修
    出てから設計議論する。
 2. **テスト網羅性の埋め合わせ (継続)**: 2026-05-29 のセキュリティ修正で
    `repository_reader` / `diff_validator` / `patch_applier` の path
-   検証は厚くなったが、まだ `cli`、`controller` の直接テスト不足。
-   罠 4.8 の方針通り、これらを触るタイミングで先に回帰テストを書く。
+   検証は厚くなった。2026-05-30 に `Controller` の直接テスト 12 ケースを
+   追加 (`tests/test_controller.py`、バグ発見なし)。**残るは `cli` の
+   直接テスト** — argparse + 環境変数 + config 探索の組み合わせで、
+   `subprocess.run([sys.executable, "-m", "patchpaw.cli", ...])` での
+   integration スタイルが現実的。罠 4.8 の方針通り、次に `cli` を触る
+   タイミングで先に回帰テストを書く。
 
 v2.3.x (サマリ JSON 拡張) は 2026-05-29 に全完了:
 LLM トークン使用量・LLM 応答時間・適用 patch ファイルパス。
 P2 (`SEARCH_ALL`/`REPLACE_ALL`) も 2026-05-29 完了。
 セキュリティ修正 (path 正規化 3 箇所共通化) も 2026-05-29 完了。
+Controller 直接テスト追加は 2026-05-30 完了。
 
 ### 5.3 v2.2 設計 (実装済み、参考記録)
 
