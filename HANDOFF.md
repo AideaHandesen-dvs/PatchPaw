@@ -285,7 +285,11 @@ context" が複数回発火)。Claude 自身は記憶がない状態で「未修
 優先度順:
 
 1. **P3 repo-map**: 保留 (TODO.md §P3)。実機でコンテキスト不足の事例が
-   出てから設計議論する。
+   出てから設計議論する。**着手判断のための観察手順は TODO.md §P3 の
+   「着手判断のための観察手順」セクションに記載** (`sessions/*_summary.json`
+   の `tokens_total.prompt` を jq で集計、20K/100K の閾値で判断)。
+   PatchPaw 自身のドッグフーディングだけだとサンプル不足のリスクがあるので、
+   他プロジェクト (例: pawagent) での適用も検討。
 2. **テスト網羅性の埋め合わせ (継続)**: 2026-05-29 のセキュリティ修正で
    `repository_reader` / `diff_validator` / `patch_applier` の path
    検証は厚くなった。2026-05-30 に `Controller` の直接テスト 12 ケースを

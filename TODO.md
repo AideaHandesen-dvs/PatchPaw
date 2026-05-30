@@ -120,6 +120,28 @@ LLM に渡したい。
 急速にコンテキストを食う (DeepSeek V4 Flash の 1M トークンでも長期セッションで
 効いてくる)。
 
+### 着手判断のための観察手順
+P3 は「実機でコンテキスト不足の事例が出てから設計議論」する方針 (HANDOFF.md
+§5.2)。判断材料は v2.3.x で追加した `sessions/<run_id>_summary.json` の
+`tokens_total.prompt`。集計は jq で:
+
+```bash
+for f in sessions/run_*_summary.json; do
+  jq -r '[.run_id, .tokens_total.prompt, .executed] | @tsv' "$f"
+done | sort
+```
+
+判断基準 (目安):
+- 1 タスクあたり prompt が **20K tokens 超え** ⇒ repo-map 検討圏
+- **100K 超え** ⇒ 必須圏 (応答レイテンシ・コスト両面で痛い、また
+  lost-in-the-middle で LLM 精度自体も落ちる)
+
+**PatchPaw 自身のドッグフーディングだけだとサンプル不足の可能性**。
+PatchPaw のコードベース自体が小さいので、allowed_paths 全部渡しても
+ずっと低トークンで済んでしまい「P3 不要」結論に偏りうる。他の中規模
+プロジェクト (例: pawagent、その他既存リポジトリでの低リスクタスク) に
+PatchPaw を適用して測定するのが王道。
+
 ### 第一案 (軽量)
 ユーザー指示文と各ファイルの単純なキーワードマッチでスコアリングして
 上位 N ファイルだけ渡す。
@@ -128,6 +150,13 @@ LLM に渡したい。
   検証する
 - フラグ: `--auto-files`、`--files` と排他
 - スコア説明を `progress_callback` でログ出力 (なぜそのファイルを選んだか)
+
+### 急がない理由
+- DeepSeek V4 Flash の月数ドルというコスト感だと、コンテキスト膨張で破綻する
+  ハードルが意外と高い
+- 投機実装で詰むリスクをゼロにする運用 (罠 4.9 の「git の状態が source of
+  truth」と整合)
+- 「使ってみてどう困ったか」の事例が無いまま簡易案 vs aider 方式を比較できない
 
 ### 未設計のまま
 P1, P2 を終えてから着手。設計案を出す段階で要相談 (実装着手前にチャットで議論)。
