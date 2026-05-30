@@ -196,6 +196,31 @@ git tag pre-dogfood-$(date +%Y%m%d-%H%M%S)
 タスク間のロールバック点も無くなるので別のリスクと交換しているだけ。
 基本は **clean にしてから走らせる**。
 
+### 4.8 直接テストが無いコンポーネントは既存バグの巣
+
+2026-05-29 の P2 (`SEARCH_ALL`) 実装時に判明: `patch_applier.py` の
+`parse_blocks` を拡張しようとして、初めて `TestPatchApplier` を新規作成した。
+そこで旧 `BLOCK_RE` のパス部分 `.+?` が `re.DOTALL` 下で改行を吸って複数
+ブロックを跨ぐバグが発見された (`[^\n]+?` に修正)。
+
+教訓:
+- **「カバレッジを通る」と「直接テストがある」は別**。`patch_applier` は
+  Controller 経由の integration テストで一見動いてたが、複数ブロック含む
+  LLM 出力に対する parse の正しさは検証されていなかった
+- **新機能のために拡張する前に、まず既存挙動の回帰テストを書く**。
+  P2 ではブロック parse + apply 周りで `TestParseBlocks`,
+  `TestPatchApplierUnique` から書き始めたので、新仕様 (`SEARCH_ALL`) の
+  実装途中で混在ロールバック等のエッジケースに気づけた
+- **テスト密度の偏在を確認**: `grep "class Test" tests/` で網羅を見ると、
+  かつて `diff_validator`, `prompt_builder`, `session_manager` には
+  テストがあったが `patch_applier`, `repository_reader` (一部) には
+  なかった。`repository_reader` の `TestRepositoryReader` も存在するが、
+  網羅性が偏っている可能性は同様にある
+
+次に未テスト/低密度コンポーネントを触るときは、**先に回帰テストを書く**
+方針で進めること。直接テストの追加は P2 のように本来のスコープを少し
+広げるが、副次バグ発見の利得が大きい。
+
 ---
 
 ## 5. 進行中のタスクと次セッションへの引き継ぎ
@@ -211,15 +236,17 @@ git tag pre-dogfood-$(date +%Y%m%d-%H%M%S)
 
 優先度順:
 
-1. **P2 sed 風ブロック**: 同一ファイル内大量箇所変更で SEARCH/REPLACE が
-   破綻する問題への対処。設計は TODO.md に下書きあり、実装着手前に
-   チャットで設計議論 (正規表現 vs リテラル、ロールバック方式、
-   `DANGEROUS_PATTERNS` を REPLACE_PATTERN replacement にも掛けるか等)。
-2. **P3 repo-map**: `--files` 未指定時の関連ファイル自動選択。
-   P2 の後。設計案を出す段階でチャット相談。
+1. **P3 repo-map**: `--files` 未指定時の関連ファイル自動選択。
+   設計案を出す段階でチャット相談 (TODO.md §P3 に「軽量第一案」と
+   「未設計のまま」のセクションあり)。
+2. **テスト網羅性の埋め合わせ**: 罠 4.8 で挙げた未テスト/低密度
+   コンポーネントの回帰テスト整備。次に該当コンポーネント (例:
+   `repository_reader`, `cli`, `controller`) を触る時に**先に**書く方針。
+   タスクとしては個別に切る必要なし、機会駆動で OK。
 
 v2.3.x (サマリ JSON 拡張) は 2026-05-29 に全完了:
 LLM トークン使用量・LLM 応答時間・適用 patch ファイルパス。
+P2 (`SEARCH_ALL`/`REPLACE_ALL`) も 2026-05-29 完了。
 
 ### 5.3 v2.2 設計 (実装済み、参考記録)
 

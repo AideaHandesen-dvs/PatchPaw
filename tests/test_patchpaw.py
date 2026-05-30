@@ -349,3 +349,331 @@ class TestLLMAdapterUsage:
         assert r.prompt_tokens is None
         assert r.completion_tokens == 5
         assert r.total_tokens is None
+
+
+# ────────────────────────────────────────────
+# Patch Applier — SEARCH/REPLACE と SEARCH_ALL/REPLACE_ALL
+# (P2: sed 風一括置換ブロック)
+# ────────────────────────────────────────────
+
+class TestParseBlocks:
+    """parse_blocks のモード判別と並び順を検証。"""
+
+    def test_unique_block_parsed(self):
+        from patchpaw.patch_applier import parse_blocks
+        blocks = parse_blocks(VALID_DIFF)
+        assert len(blocks) == 1
+        assert blocks[0].mode == "unique"
+        assert blocks[0].file_path == "src/main.py"
+
+    def test_search_all_block_parsed(self):
+        from patchpaw.patch_applier import parse_blocks
+        text = textwrap.dedent("""\
+            FILE: src/main.py
+            <<<<<<< SEARCH_ALL
+            old_name
+            =======
+            new_name
+            >>>>>>> REPLACE_ALL
+        """)
+        blocks = parse_blocks(text)
+        assert len(blocks) == 1
+        assert blocks[0].mode == "all"
+        # SEARCH_ALL は末尾改行を trim する (リテラル部分文字列扱い)
+        assert blocks[0].search == "old_name"
+        assert blocks[0].replace == "new_name"
+
+    def test_search_all_multiline_block_keeps_inner_newlines(self):
+        """SEARCH_ALL の複数行ブロックは内部の改行を保ち、末尾改行のみ trim。"""
+        from patchpaw.patch_applier import parse_blocks
+        text = textwrap.dedent("""\
+            FILE: src/main.py
+            <<<<<<< SEARCH_ALL
+            print(x)
+            print(y)
+            =======
+            log(x)
+            log(y)
+            >>>>>>> REPLACE_ALL
+        """)
+        blocks = parse_blocks(text)
+        assert len(blocks) == 1
+        assert blocks[0].search == "print(x)\nprint(y)"
+        assert blocks[0].replace == "log(x)\nlog(y)"
+
+    def test_mixed_blocks_parsed_in_order(self):
+        """SEARCH と SEARCH_ALL を混在させた場合、出現順に並ぶ。"""
+        from patchpaw.patch_applier import parse_blocks
+        text = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH
+            x = 1
+            =======
+            x = 2
+            >>>>>>> REPLACE
+
+            FILE: b.py
+            <<<<<<< SEARCH_ALL
+            old
+            =======
+            new
+            >>>>>>> REPLACE_ALL
+
+            FILE: c.py
+            <<<<<<< SEARCH
+            y = 1
+            =======
+            y = 2
+            >>>>>>> REPLACE
+        """)
+        blocks = parse_blocks(text)
+        assert [b.file_path for b in blocks] == ["a.py", "b.py", "c.py"]
+        assert [b.mode for b in blocks] == ["unique", "all", "unique"]
+
+    def test_search_does_not_match_search_all(self):
+        """BLOCK_UNIQUE_RE が SEARCH_ALL ブロックを誤って拾わない。"""
+        from patchpaw.patch_applier import parse_blocks
+        text = textwrap.dedent("""\
+            FILE: x.py
+            <<<<<<< SEARCH_ALL
+            foo
+            =======
+            bar
+            >>>>>>> REPLACE_ALL
+        """)
+        blocks = parse_blocks(text)
+        # SEARCH_ALL ブロック 1 個だけが拾われる (SEARCH モードの誤検出なし)
+        assert len(blocks) == 1
+        assert blocks[0].mode == "all"
+
+    def test_default_mode_is_unique(self):
+        """EditBlock のデフォルト mode が 'unique' で、既存コードを壊さない。"""
+        from patchpaw.patch_applier import EditBlock
+        b = EditBlock(file_path="x.py", search="a", replace="b")
+        assert b.mode == "unique"
+
+
+class TestPatchApplierUnique:
+    """SEARCH/REPLACE モードの回帰テスト (P2 で壊してないことを保証)。"""
+
+    def test_apply_unique_success(self, tmp_path):
+        from patchpaw.patch_applier import PatchApplier
+        (tmp_path / "a.py").write_text("x = 1\ny = 2\n")
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH
+            x = 1
+            =======
+            x = 99
+            >>>>>>> REPLACE
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert ok, msg
+        assert (tmp_path / "a.py").read_text() == "x = 99\ny = 2\n"
+
+    def test_apply_unique_ambiguous_rolls_back(self, tmp_path):
+        """SEARCH が複数箇所に一致したら apply は失敗してロールバック。"""
+        from patchpaw.patch_applier import PatchApplier
+        original = "x = 1\nx = 1\n"
+        (tmp_path / "a.py").write_text(original)
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH
+            x = 1
+            =======
+            x = 2
+            >>>>>>> REPLACE
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert not ok
+        assert (tmp_path / "a.py").read_text() == original
+
+    def test_create_new_file_via_empty_search(self, tmp_path):
+        from patchpaw.patch_applier import PatchApplier
+        diff = textwrap.dedent("""\
+            FILE: new.py
+            <<<<<<< SEARCH
+            =======
+            print("hello")
+            >>>>>>> REPLACE
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert ok, msg
+        assert (tmp_path / "new.py").read_text() == 'print("hello")\n'
+
+
+class TestPatchApplierSearchAll:
+    """SEARCH_ALL/REPLACE_ALL モードのテスト。"""
+
+    def test_apply_replaces_all_occurrences(self, tmp_path):
+        from patchpaw.patch_applier import PatchApplier
+        (tmp_path / "a.py").write_text(
+            "old_name = 1\nuse(old_name)\nreturn old_name\n"
+        )
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH_ALL
+            old_name
+            =======
+            new_name
+            >>>>>>> REPLACE_ALL
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert ok, msg
+        assert (tmp_path / "a.py").read_text() == (
+            "new_name = 1\nuse(new_name)\nreturn new_name\n"
+        )
+
+    def test_apply_single_match_succeeds(self, tmp_path):
+        """SEARCH_ALL でも 1 箇所だけ一致は成功 (論点 4)。"""
+        from patchpaw.patch_applier import PatchApplier
+        (tmp_path / "a.py").write_text("only_once = 1\n")
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH_ALL
+            only_once
+            =======
+            renamed
+            >>>>>>> REPLACE_ALL
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert ok, msg
+        assert (tmp_path / "a.py").read_text() == "renamed = 1\n"
+
+    def test_apply_zero_match_rolls_back(self, tmp_path):
+        """SEARCH_ALL で 0 箇所一致はエラー、ファイル不変。"""
+        from patchpaw.patch_applier import PatchApplier
+        original = "x = 1\n"
+        (tmp_path / "a.py").write_text(original)
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH_ALL
+            nonexistent
+            =======
+            anything
+            >>>>>>> REPLACE_ALL
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert not ok
+        assert (tmp_path / "a.py").read_text() == original
+
+    def test_apply_empty_search_all_errors(self, tmp_path):
+        """SEARCH_ALL の中身が空はエラー (新規作成は SEARCH を使え)。"""
+        from patchpaw.patch_applier import PatchApplier
+        (tmp_path / "a.py").write_text("x = 1\n")
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH_ALL
+            =======
+            print("hi")
+            >>>>>>> REPLACE_ALL
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert not ok
+        assert "空" in msg or "empty" in msg.lower() or "SEARCH_ALL" in msg
+
+    def test_dry_run_zero_match_reports_error(self, tmp_path):
+        from patchpaw.patch_applier import PatchApplier
+        (tmp_path / "a.py").write_text("x = 1\n")
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH_ALL
+            nonexistent
+            =======
+            anything
+            >>>>>>> REPLACE_ALL
+        """)
+        ok, msg = PatchApplier(tmp_path).dry_run(diff)
+        assert not ok
+        assert "SEARCH_ALL" in msg
+
+
+class TestPatchApplierMixed:
+    """SEARCH/REPLACE と SEARCH_ALL/REPLACE_ALL の混在 (論点 8)。"""
+
+    def test_mixed_apply_success(self, tmp_path):
+        from patchpaw.patch_applier import PatchApplier
+        (tmp_path / "a.py").write_text("x = 1\ny = 2\n")
+        (tmp_path / "b.py").write_text("foo()\nfoo()\nfoo()\n")
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH
+            x = 1
+            =======
+            x = 99
+            >>>>>>> REPLACE
+
+            FILE: b.py
+            <<<<<<< SEARCH_ALL
+            foo
+            =======
+            bar
+            >>>>>>> REPLACE_ALL
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert ok, msg
+        assert (tmp_path / "a.py").read_text() == "x = 99\ny = 2\n"
+        assert (tmp_path / "b.py").read_text() == "bar()\nbar()\nbar()\n"
+
+    def test_mixed_rollback_when_second_block_fails(self, tmp_path):
+        """先に SEARCH_ALL で複数箇所変えた後、後続 SEARCH が失敗 → 全部ロールバック。"""
+        from patchpaw.patch_applier import PatchApplier
+        a_original = "foo()\nfoo()\nfoo()\n"
+        b_original = "x = 1\n"
+        (tmp_path / "a.py").write_text(a_original)
+        (tmp_path / "b.py").write_text(b_original)
+        diff = textwrap.dedent("""\
+            FILE: a.py
+            <<<<<<< SEARCH_ALL
+            foo
+            =======
+            bar
+            >>>>>>> REPLACE_ALL
+
+            FILE: b.py
+            <<<<<<< SEARCH
+            nonexistent_line
+            =======
+            replacement
+            >>>>>>> REPLACE
+        """)
+        ok, msg = PatchApplier(tmp_path).apply(diff)
+        assert not ok
+        # 両方とも元に戻ってる
+        assert (tmp_path / "a.py").read_text() == a_original
+        assert (tmp_path / "b.py").read_text() == b_original
+
+
+class TestDiffValidatorWithSearchAll:
+    """DiffValidator が SEARCH_ALL/REPLACE_ALL を認識し、
+    DANGEROUS_PATTERNS が REPLACE_ALL の中身にも自動適用されることを確認 (論点 6)。"""
+
+    def test_search_all_affected_files_tracked(self):
+        from patchpaw.diff_validator import DiffValidator
+        diff = textwrap.dedent("""\
+            FILE: src/main.py
+            <<<<<<< SEARCH_ALL
+            old_name
+            =======
+            new_name
+            >>>>>>> REPLACE_ALL
+        """)
+        v = DiffValidator(allowed_paths=["src/"])
+        r = v.validate(diff)
+        assert r.ok
+        assert "src/main.py" in r.affected_files
+
+    def test_dangerous_pattern_caught_in_replace_all(self):
+        from patchpaw.diff_validator import DiffValidator
+        diff = textwrap.dedent("""\
+            FILE: src/main.py
+            <<<<<<< SEARCH_ALL
+            x = 1
+            =======
+            import subprocess
+            >>>>>>> REPLACE_ALL
+        """)
+        v = DiffValidator(allowed_paths=["src/"])
+        r = v.validate(diff)
+        assert not r.ok
+        assert any("危険" in e for e in r.errors)
